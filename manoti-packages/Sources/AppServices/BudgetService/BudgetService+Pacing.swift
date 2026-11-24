@@ -6,7 +6,7 @@
 import AppModels
 import Foundation
 
-extension BudgetService {
+nonisolated extension BudgetService {
     struct DayCounts: Equatable, Sendable {
         let totalDays: Int
         let elapsedDays: Int

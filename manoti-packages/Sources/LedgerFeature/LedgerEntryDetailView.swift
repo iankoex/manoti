@@ -14,14 +14,10 @@ public struct LedgerEntryDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(LedgerService.self) private var ledgerService
-    @Environment(AccountService.self) private var accountService
-    @Environment(CategoryService.self) private var categoryService
 
     @State private var isShowingEditor = false
     @State private var isConfirmingDelete = false
     @State private var errorMessage: String?
-    @State private var accounts: [Account] = []
-    @State private var categories: [SpendingCategory] = []
 
     public init(entry: LedgerEntry) {
         self.entry = entry
@@ -46,6 +42,7 @@ public struct LedgerEntryDetailView: View {
             }
         }
         .navigationTitle("Entry")
+        .navigationBarTitleDisplayModeInlineCompat()
         .toolbar {
             if !isLinked {
                 ToolbarItemGroup(placement: .primaryAction) {
@@ -65,7 +62,7 @@ public struct LedgerEntryDetailView: View {
             Text("This removes the entry from account balances. It can't be undone from the app.")
         }
         .sheet(isPresented: $isShowingEditor) {
-            LedgerEntryEditorView(entry: entry, accounts: accounts, categories: categories)
+            LedgerEntryEditorView(entry: entry)
         }
         .alert(
             "Could not delete entry",
@@ -78,7 +75,6 @@ public struct LedgerEntryDetailView: View {
         } message: {
             Text(errorMessage ?? "")
         }
-        .onManotiDataChange { reloadOptions() }
     }
 
     private var header: some View {
@@ -126,11 +122,23 @@ public struct LedgerEntryDetailView: View {
     @ViewBuilder
     private var facts: some View {
         if let account = entry.account {
-            LabeledContent("Account", value: account.displayName)
+            LabeledContent("Account") {
+                factValue(
+                    account.displayName,
+                    symbolName: account.symbolName,
+                    tint: ManotiColor.forHex(account.colorHex)
+                )
+            }
         }
 
         if let category = entry.category {
-            LabeledContent("Category", value: category.name)
+            LabeledContent("Category") {
+                factValue(
+                    category.name,
+                    symbolName: category.symbolName,
+                    tint: ManotiColor.forHex(category.colorHex)
+                )
+            }
         }
 
         if !entry.payee.isEmpty {
@@ -145,6 +153,19 @@ public struct LedgerEntryDetailView: View {
         }
 
         LabeledContent("Source", value: LedgerEntryPresentation.sourceName(for: entry.source))
+    }
+
+    /// A tinted icon plus its value, matching the account and category chips elsewhere.
+    private func factValue(_ title: String, symbolName: String, tint: Color) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbolName)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(tint)
+                .frame(width: 22, height: 22)
+                .background(tint.opacity(0.14), in: .circle)
+
+            Text(title)
+        }
     }
 
     private var isLinked: Bool {
@@ -164,7 +185,6 @@ public struct LedgerEntryDetailView: View {
     }
 
     private func edit() {
-        reloadOptions()
         isShowingEditor = true
     }
 
@@ -176,9 +196,15 @@ public struct LedgerEntryDetailView: View {
             errorMessage = error.localizedDescription
         }
     }
+}
 
-    private func reloadOptions() {
-        accounts = (try? accountService.fetchAccounts()) ?? []
-        categories = (try? categoryService.fetchCategories()) ?? []
+extension View {
+    @ViewBuilder
+    fileprivate func navigationBarTitleDisplayModeInlineCompat() -> some View {
+        #if os(iOS)
+        navigationBarTitleDisplayMode(.inline)
+        #else
+        self
+        #endif
     }
 }

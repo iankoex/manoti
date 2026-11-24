@@ -5,6 +5,7 @@
 
 import AppModels
 import AppServices
+import EntryFormFeature
 import Modifiers
 import SwiftUI
 
@@ -13,111 +14,26 @@ struct InboxDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(AccountService.self) private var accountService
+    @Environment(CategoryService.self) private var categoryService
+    @Environment(LedgerService.self) private var ledgerService
     @Environment(InboxService.self) private var inboxService
     @Environment(\.manotiAmountsHidden) private var amountsHidden
 
-    @State private var accounts: [Account] = []
-    @State private var suggestions: [CategorySuggestion] = []
-    @State private var selectedAccountID: UUID?
-    @State private var selectedCategoryID: UUID?
+    @State private var state: EntryFormState
+    @State private var alwaysFile = false
+    @State private var possibleDuplicate: LedgerEntry?
+    @State private var isConfirmingIgnore = false
     @State private var errorMessage: String?
+
+    init(entry: LedgerEntry) {
+        self.entry = entry
+        _state = State(initialValue: EntryFormState(purpose: .review, entry: entry))
+    }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Message") {
-                    LabeledContent(
-                        "Amount",
-                        value: AmountMask.money(
-                            Money(minorUnits: entry.amountMinor, currency: entry.currency),
-                            hidden: amountsHidden
-                        )
-                    )
-                    LabeledContent("Type", value: entry.kind.displayName)
-
-                    if !entry.payee.isEmpty {
-                        LabeledContent("From", value: entry.payee)
-                    }
-
-                    LabeledContent(
-                        "When",
-                        value: entry.occurredAt.formatted(date: .abbreviated, time: .shortened)
-                    )
-
-                    if entry.feeMinor != 0 {
-                        LabeledContent("Fee", value: AmountMask.money(entry.fee, hidden: amountsHidden))
-                    }
-                }
-
-                Section("Account") {
-                    if accounts.isEmpty {
-                        Text("No active \(entry.currency.code) account. Add one in Accounts first.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Picker("Account", selection: $selectedAccountID) {
-                        Text("Choose an account").tag(UUID?.none)
-                        ForEach(accounts) { account in
-                            Text("\(account.displayName) · \(account.currency.code)")
-                                .tag(Optional(account.id))
-                        }
-                    }
-                }
-
-                Section("Category") {
-                    if suggestions.isEmpty {
-                        Text("No suggestion yet. Pick a category later from the ledger.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(suggestions) { suggestion in
-                                    VStack(spacing: 2) {
-                                        CategoryChip(
-                                            category: suggestion.category,
-                                            isSelected: selectedCategoryID == suggestion.category.id
-                                        )
-                                        .onTapGesture { selectedCategoryID = suggestion.category.id }
-
-                                        Text("\(Int(suggestion.confidence * 100))% · \(suggestion.reason)")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                    }
-                                }
-                            }
-                            .padding(.vertical, 2)
-                        }
-                    }
-                }
-
-                if !entry.rawMessage.isEmpty {
-                    Section("Original message") {
-                        if amountsHidden {
-                            AmountsHiddenPlaceholder("Message hidden")
-                        } else {
-                            DisclosureGroup("Show text") {
-                                Text(entry.rawMessage)
-                                    .font(.caption)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                    }
-                }
-
-                if let errorMessage {
-                    Section {
-                        Text(errorMessage)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                    }
-                }
-
-                Section {
-                    Button("Ignore this message", role: .destructive, action: ignore)
-                }
+            EntryFormView(state: state, showsKindControl: true) {
+                footer
             }
             .navigationTitle("Review")
             .navigationBarTitleDisplayModeInlineCompat()
@@ -125,58 +41,145 @@ struct InboxDetailView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close", action: dismiss.callAsFunction)
                 }
+
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Confirm", action: confirm)
                         .buttonStyle(.glassProminent)
-                        .disabled(!hasValidAccountSelection)
+                        .disabled(!state.canSave)
                 }
             }
             .task { load() }
+            .alert(
+                "Could not update this entry",
+                isPresented: Binding(
+                    get: { errorMessage != nil },
+                    set: { if !$0 { errorMessage = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(errorMessage ?? "")
+            }
+            .confirmationDialog(
+                "Ignore this message?",
+                isPresented: $isConfirmingIgnore,
+                titleVisibility: .visible
+            ) {
+                Button("It isn't a transaction") { ignore(.notATransaction) }
+                Button("I recorded it elsewhere") { ignore(.duplicate) }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Manoti remembers this message shape so it needs less attention next time.")
+            }
         }
     }
 
-    private var hasValidAccountSelection: Bool {
-        guard let selectedAccountID else {
-            return false
+    @ViewBuilder
+    private var footer: some View {
+        if let possibleDuplicate {
+            Label {
+                Text(
+                    "Possible duplicate of \(duplicateTitle(possibleDuplicate)). Nothing is linked automatically."
+                )
+            } icon: {
+                Image(systemName: "questionmark.circle")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
 
-        return accounts.contains { $0.id == selectedAccountID }
+        if !entry.rawMessage.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Original message")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                if amountsHidden {
+                    AmountsHiddenPlaceholder("Message hidden")
+                } else {
+                    DisclosureGroup("Show text") {
+                        Text(entry.rawMessage)
+                            .font(.caption)
+                            .textSelection(.enabled)
+                    }
+                    .font(.subheadline)
+                }
+            }
+        }
+
+        if !entry.payee.isEmpty {
+            Toggle(isOn: $alwaysFile) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Always file this merchant here")
+                        .font(.subheadline)
+
+                    Text("Skips Review for \(entry.payee) once the category is confident.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+
+        Button(role: .destructive) {
+            isConfirmingIgnore = true
+        } label: {
+            Text("Ignore this message")
+                .font(.subheadline.weight(.medium))
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.bordered)
     }
 
     private func load() {
-        accounts = ((try? accountService.fetchAccounts()) ?? []).filter {
-            entry.currencyCode.isEmpty || $0.currencyCode == entry.currencyCode
-        }
-        suggestions = (try? inboxService.suggestions(for: entry)) ?? []
+        state.reload(accountService: accountService, categoryService: categoryService)
+        let suggestions = (try? inboxService.suggestions(for: entry)) ?? []
+        state.applySuggestion(suggestions.first)
 
-        if let linkedID = entry.account?.id, accounts.contains(where: { $0.id == linkedID }) {
-            selectedAccountID = linkedID
-        } else {
-            selectedAccountID = accounts.first?.id
+        // Routing could not identify the account; the merchant's own history is a
+        // better guess than the first account in the list.
+        if entry.account == nil, let account = inboxService.suggestedAccount(for: entry) {
+            state.selectedAccountID = account.id
         }
 
-        selectedCategoryID = suggestions.first?.category.id
+        alwaysFile = inboxService.autoApply(for: entry.payee)
+        possibleDuplicate = inboxService.possibleDuplicate(of: entry)
     }
 
     private func confirm() {
-        let account = accounts.first { $0.id == selectedAccountID }
-        let category = suggestions.map(\.category).first { $0.id == selectedCategoryID }
-
         do {
-            try inboxService.confirm(entry, account: account, category: category)
+            // Apply the edited fields first, then confirm so the status flips and the
+            // merchant/category learning is recorded.
+            try state.save(ledger: ledgerService)
+            try inboxService.confirm(
+                entry,
+                account: state.selectedAccount,
+                category: state.selectedCategory
+            )
+
+            if !entry.payee.isEmpty {
+                try inboxService.setAutoApply(alwaysFile, for: entry.payee)
+            }
+
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    private func ignore() {
+    private func ignore(_ reason: IngestMemoryReason) {
         do {
-            try inboxService.ignore(entry)
+            try inboxService.ignore(entry, reason: reason)
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func duplicateTitle(_ entry: LedgerEntry) -> String {
+        let name = entry.payee.isEmpty ? entry.kind.displayName : entry.payee
+        let when = entry.occurredAt.formatted(.dateTime.day().month(.abbreviated).hour().minute())
+        return "\(name) on \(when)"
     }
 }
 

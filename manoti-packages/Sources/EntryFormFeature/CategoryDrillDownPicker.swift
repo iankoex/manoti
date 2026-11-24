@@ -1,6 +1,6 @@
 //
 //  CategoryDrillDownPicker.swift
-//  QuickAddFeature
+//  EntryFormFeature
 //
 
 import AppModels
@@ -26,6 +26,7 @@ enum CategoryDrillDownText {
 struct CategoryDrillDownPicker: View {
     let groups: [CategoryGroup]
     let kind: CategoryKind
+    var pinnedCategory: SpendingCategory?
     @Binding var selectedCategoryID: UUID?
     let selectedCategory: SpendingCategory?
 
@@ -98,18 +99,30 @@ struct CategoryDrillDownPicker: View {
                     ForEach(categories(in: activeGroup)) { category in
                         categoryRow(category)
                     }
-                } else if visibleGroups.isEmpty {
-                    Text("No \(kind.displayName.lowercased()) categories yet.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 14)
-                        .frame(height: rowHeight)
                 } else {
-                    ForEach(Array(visibleGroups.enumerated()), id: \.element.id) { index, group in
-                        groupRow(group)
-                        if index < visibleGroups.count - 1 {
+                    if let pinnedCategory, !pinnedIsListed {
+                        categoryRow(pinnedCategory)
+
+                        if !visibleGroups.isEmpty {
                             divider
+                        }
+                    }
+
+                    if visibleGroups.isEmpty {
+                        if pinnedCategory == nil || pinnedIsListed {
+                            Text("No \(kind.displayName.lowercased()) categories yet.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 14)
+                                .frame(height: rowHeight)
+                        }
+                    } else {
+                        ForEach(Array(visibleGroups.enumerated()), id: \.element.id) { index, group in
+                            groupRow(group)
+                            if index < visibleGroups.count - 1 {
+                                divider
+                            }
                         }
                     }
                 }
@@ -121,6 +134,17 @@ struct CategoryDrillDownPicker: View {
         .background(.quaternary.opacity(0.25), in: .rect(cornerRadius: cornerRadius))
         .clipShape(.rect(cornerRadius: cornerRadius))
         .animation(.snappy(duration: 0.2), value: activeGroup?.id)
+    }
+
+    /// True when the pinned category is already offered by one of the visible groups.
+    private var pinnedIsListed: Bool {
+        guard let pinnedCategory else {
+            return false
+        }
+
+        return visibleGroups.contains { group in
+            categories(in: group).contains { $0.id == pinnedCategory.id }
+        }
     }
 
     private var visibleGroups: [CategoryGroup] {

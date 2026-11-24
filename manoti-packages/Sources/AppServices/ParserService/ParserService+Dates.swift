@@ -5,7 +5,7 @@
 
 import Foundation
 
-enum DateExtractor {
+nonisolated enum DateExtractor {
     struct Result {
         let date: Date
         let fromMessage: Bool
@@ -43,6 +43,9 @@ enum DateExtractor {
         "yyyy-MM-dd",
         "dd/MM/yy",
         "dd/MM/yyyy",
+        "dd-MM-yyyy HH:mm:ss",
+        "dd-MM-yyyy HH:mm",
+        "dd-MM-yyyy",
         "dd MMM yyyy",
         "dd MMM yyyy HH:mm",
     ]

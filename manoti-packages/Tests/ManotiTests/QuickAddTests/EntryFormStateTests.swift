@@ -9,7 +9,7 @@ import Testing
 
 @testable import AppModels
 @testable import AppServices
-@testable import QuickAddFeature
+@testable import EntryFormFeature
 
 @MainActor
 @Suite("Add form")

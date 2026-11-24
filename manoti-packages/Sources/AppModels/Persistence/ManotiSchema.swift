@@ -20,6 +20,7 @@ public enum ManotiSchema {
         ParseRule.self,
         MerchantMemory.self,
         MerchantAlias.self,
+        IngestMemory.self,
         SmartRule.self,
         ContextWindow.self,
         Loan.self,

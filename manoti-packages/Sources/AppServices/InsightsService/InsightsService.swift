@@ -9,7 +9,7 @@ import Foundation
 import Observation
 import SwiftData
 
-public struct NetWorth: Equatable, Sendable {
+nonisolated public struct NetWorth: Equatable, Sendable {
     public let amount: Money
     public let missingRates: [String]
 
@@ -21,7 +21,7 @@ public struct NetWorth: Equatable, Sendable {
 
 /// A period total in the display currency, plus any currencies that had no rate and were
 /// therefore shown 1:1 in major units.
-public struct PeriodTotal: Equatable, Sendable {
+nonisolated public struct PeriodTotal: Equatable, Sendable {
     public let amount: Money
     public let missingRates: [String]
 
@@ -31,7 +31,7 @@ public struct PeriodTotal: Equatable, Sendable {
     }
 }
 
-public struct DailySpend: Identifiable, Sendable {
+nonisolated public struct DailySpend: Identifiable, Sendable {
     public let date: Date
     public let total: Money
     public let missingRates: [String]
@@ -50,7 +50,7 @@ public struct DailySpend: Identifiable, Sendable {
 /// `context` is internal so the comparison maths can live in its own extension file while
 /// still reading the same store.
 @Observable
-public final class InsightsService: Loggable {
+nonisolated public final class InsightsService: Loggable {
     let context: ModelContext
 
     public init(context: ModelContext) {

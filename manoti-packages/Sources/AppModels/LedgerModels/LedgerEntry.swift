@@ -28,6 +28,9 @@ public final class LedgerEntry {
     public var statusRaw: String = LedgerEntryStatus.confirmed.rawValue
     public var confidence: Double = 1
     public var dedupeHash: String = ""
+    /// Sender + digit-masked template, computed at ingest so a message can still be
+    /// learned from when raw text is not kept.
+    public var ingestFingerprint: String = ""
     public var isSoftDeleted: Bool = false
 
     public var transfer: Transfer?

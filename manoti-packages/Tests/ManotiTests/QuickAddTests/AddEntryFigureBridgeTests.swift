@@ -6,6 +6,7 @@
 import Testing
 
 @testable import AppModels
+@testable import EntryFormFeature
 @testable import QuickAddFeature
 @testable import TransfersFeature
 

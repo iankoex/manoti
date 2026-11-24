@@ -7,11 +7,11 @@ import AppModels
 import Foundation
 import SwiftData
 
-public enum InsightsError: Error, Equatable, Sendable {
+nonisolated public enum InsightsError: Error, Equatable, Sendable {
     case invalidPeriod
 }
 
-extension InsightsService {
+nonisolated extension InsightsService {
     /// Compares the period containing `date` with the previous equal-elapsed period and with
     /// up to four preceding periods.
     ///
@@ -463,7 +463,7 @@ extension InsightsService {
 
 // MARK: - Windows
 
-private struct ComparisonWindows: Equatable, Sendable {
+private nonisolated struct ComparisonWindows: Equatable, Sendable {
     let current: DateInterval
     let previous: DateInterval
     let elapsedDays: Int
@@ -506,7 +506,7 @@ private struct ComparisonWindows: Equatable, Sendable {
     }
 }
 
-private struct TrailingPeriod: Equatable, Sendable {
+private nonisolated struct TrailingPeriod: Equatable, Sendable {
     /// The whole preceding period, used only to decide whether the app has data for it.
     let full: DateInterval
 
@@ -514,7 +514,7 @@ private struct TrailingPeriod: Equatable, Sendable {
     let window: DateInterval
 }
 
-private func precedingPeriods(
+private nonisolated func precedingPeriods(
     kind: InsightPeriodKind,
     before start: Date,
     elapsedDays: Int,
@@ -554,13 +554,13 @@ private func precedingPeriods(
 
 // MARK: - Accumulation
 
-private struct CategoryMeta: Equatable, Sendable {
+private nonisolated struct CategoryMeta: Equatable, Sendable {
     let name: String
     let symbolName: String
     let colorHex: String
 }
 
-private struct PayeeTally: Equatable, Sendable {
+private nonisolated struct PayeeTally: Equatable, Sendable {
     var payee: String
     var count: Int = 0
     var totalMinor: Int64 = 0
@@ -571,12 +571,12 @@ private struct PayeeTally: Equatable, Sendable {
     }
 }
 
-private struct SpendEntry: Equatable, Sendable {
+private nonisolated struct SpendEntry: Equatable, Sendable {
     let minorUnits: Int64
     let payee: String
 }
 
-private struct SpendAccumulator {
+private nonisolated struct SpendAccumulator {
     var totalMinor: Int64 = 0
     var fixedMinor: Int64 = 0
     var variableMinor: Int64 = 0
@@ -622,7 +622,7 @@ private struct SpendAccumulator {
     }
 }
 
-extension Dictionary where Key == String, Value == PayeeTally {
+nonisolated extension Dictionary where Key == String, Value == PayeeTally {
     fileprivate mutating func add(minorUnits: Int64, payee: String) {
         let key = payee.lowercased()
 

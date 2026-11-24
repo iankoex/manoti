@@ -9,7 +9,7 @@ import Foundation
 import Observation
 import SwiftData
 
-public struct CategorySuggestion: Identifiable {
+nonisolated public struct CategorySuggestion: Identifiable {
     public let category: SpendingCategory
     public let confidence: Double
     public let reason: String
@@ -34,7 +34,7 @@ public struct CategorySuggestion: Identifiable {
 
 /// Proposes categories. It never silently files a transaction the user has not taught it.
 @Observable
-public final class CategoriserService: Loggable {
+nonisolated public final class CategoriserService: Loggable {
     private let context: ModelContext
 
     public init(context: ModelContext) {
@@ -54,7 +54,9 @@ public final class CategoriserService: Loggable {
         let hasPayee = !key.isEmpty
         var results: [CategorySuggestion] = []
         let memories = try context.fetch(FetchDescriptor<MerchantMemory>())
+        let categories = try fetchCategories()
         let activeContext = contextMerchant ?? activeContextMerchant(at: date)
+        let now = Date()
 
         if hasPayee {
             if let memory = memories.first(where: { $0.merchantKey == key }),
@@ -64,30 +66,52 @@ public final class CategoriserService: Loggable {
                 results.append(
                     CategorySuggestion(
                         category: category,
-                        confidence: memory.autoApply ? 0.99 : 0.95,
+                        confidence: memoryConfidence(memory, category: category, now: now),
                         reason:
                             "You filed \(memory.displayName.isEmpty ? payee : memory.displayName) here \(memory.timesSeen) time\(memory.timesSeen == 1 ? "" : "s")",
                         isAutoApplicable: memory.autoApply
                     )
                 )
+
+                // A merchant the user files under two categories keeps the other one a
+                // tap away, instead of being overwritten on the next confirmation.
+                for (categoryID, count) in memory.categoryCounts
+                where count >= 2 && categoryID != category.id {
+                    guard let alternative = categories.first(where: { $0.id == categoryID }),
+                        isEligible(alternative, kind: kind)
+                    else {
+                        continue
+                    }
+
+                    results.append(
+                        CategorySuggestion(
+                            category: alternative,
+                            confidence: 0.6,
+                            reason: "Filed here \(count) time\(count == 1 ? "" : "s") before"
+                        )
+                    )
+                }
             }
 
-            for memory in memories {
+            for memory in memories where memory.merchantKey != key {
                 guard let category = memory.category, isEligible(category, kind: kind) else {
                     continue
                 }
 
-                let aliasMatch = (memory.aliases ?? []).contains { alias in
-                    !alias.aliasKey.isEmpty
-                        && (alias.aliasKey == key || key.contains(alias.aliasKey))
+                let aliasMatch = (memory.aliases ?? []).contains { $0.aliasKey == key }
+                let similar = MerchantKey.similarity(memory.merchantKey, key) >= 0.6
+
+                guard aliasMatch || similar else {
+                    continue
                 }
 
-                if aliasMatch {
-                    results.append(
-                        CategorySuggestion(
-                            category: category, confidence: 0.8, reason: "Similar merchant: \(memory.displayName)")
+                results.append(
+                    CategorySuggestion(
+                        category: category,
+                        confidence: aliasMatch ? 0.85 : 0.8,
+                        reason: "Similar merchant: \(memory.displayName)"
                     )
-                }
+                )
             }
         }
 
@@ -123,7 +147,6 @@ public final class CategoriserService: Loggable {
         }
 
         if hasPayee {
-            let categories = try fetchCategories()
             let upper = payee.uppercased()
 
             for category in categories where !category.keywordList.isEmpty {
@@ -162,25 +185,51 @@ public final class CategoriserService: Loggable {
         }
 
         let memories = try context.fetch(FetchDescriptor<MerchantMemory>())
-        let memory =
-            memories.first { $0.merchantKey == key }
-            ?? {
-                let created = MerchantMemory(merchantKey: key, displayName: payee)
-                context.insert(created)
-                return created
-            }()
+        let memory: MerchantMemory
+
+        if let exact = memories.first(where: { $0.merchantKey == key }) {
+            memory = exact
+        } else if let similar =
+            memories
+            .filter({ MerchantKey.similarity($0.merchantKey, key) >= 0.6 })
+            .max(by: { $0.timesSeen < $1.timesSeen })
+        {
+            // A different spelling of a merchant we already know: keep one memory and
+            // remember the spelling, rather than starting a second one from zero.
+            memory = similar
+
+            if !(similar.aliases ?? []).contains(where: { $0.aliasKey == key }) {
+                let alias = MerchantAlias(aliasKey: key)
+                alias.merchantMemory = similar
+                context.insert(alias)
+            }
+        } else {
+            let created = MerchantMemory(merchantKey: key, displayName: payee)
+            context.insert(created)
+            memory = created
+        }
 
         memory.category = category
         memory.displayName = payee
         memory.account = account ?? memory.account
         memory.timesSeen += 1
         memory.lastSeenAt = Date()
+        memory.record(categoryID: category.id)
     }
 
     public func setAutoApply(_ enabled: Bool, for payee: String) throws {
         let key = MerchantKey.normalise(payee)
+        guard !key.isEmpty else {
+            return
+        }
+
         let memories = try context.fetch(FetchDescriptor<MerchantMemory>())
-        memories.first { $0.merchantKey == key }?.autoApply = enabled
+        let memory =
+            memories.first { $0.merchantKey == key }
+            ?? memories.first { ($0.aliases ?? []).contains { $0.aliasKey == key } }
+            ?? memories.first { MerchantKey.similarity($0.merchantKey, key) >= 0.6 }
+
+        memory?.autoApply = enabled
         try context.save()
         ManotiNotifications.postDataChanged()
     }
@@ -217,6 +266,29 @@ public final class CategoriserService: Loggable {
         for window in windows where window.expiresAt < now {
             context.delete(window)
         }
+    }
+
+    private func memoryConfidence(
+        _ memory: MerchantMemory,
+        category: SpendingCategory,
+        now: Date
+    ) -> Double {
+        if memory.autoApply {
+            return 0.99
+        }
+
+        let counts = memory.categoryCounts
+        let total = counts.values.reduce(0, +)
+        let count = counts[category.id] ?? memory.timesSeen
+        let share = total > 0 ? Double(count) / Double(total) : 1
+        var confidence = 0.9 + 0.05 * share
+
+        // A merchant not seen for six months is a weaker bet, but never disappears.
+        if now.timeIntervalSince(memory.lastSeenAt) > 180 * 24 * 60 * 60 {
+            confidence -= 0.05
+        }
+
+        return min(0.99, max(0.8, confidence))
     }
 
     private func isEligible(_ category: SpendingCategory, kind: CategoryKind?) -> Bool {

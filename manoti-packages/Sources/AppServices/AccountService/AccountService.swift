@@ -19,7 +19,7 @@ public enum AccountError: Error, Equatable {
 }
 
 @Observable
-public final class AccountService: Loggable {
+nonisolated public final class AccountService: Loggable {
     private let context: ModelContext
 
     public init(context: ModelContext) {
@@ -274,7 +274,7 @@ public final class AccountService: Loggable {
 }
 
 /// Values that may point at an account, grouped by how routing compares them.
-private enum IdentifierNamespace: Equatable {
+private nonisolated enum IdentifierNamespace: Equatable {
     case cardLast4
     case number
     case sender

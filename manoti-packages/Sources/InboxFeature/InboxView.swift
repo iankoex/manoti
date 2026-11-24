@@ -17,6 +17,7 @@ public struct InboxView: View {
 
     @State private var entries: [LedgerEntry] = []
     @State private var unparsed: [UnparsedMessage] = []
+    @State private var autoIgnored: [LedgerEntry] = []
     @State private var selected: LedgerEntry?
 
     public init() {}
@@ -24,7 +25,7 @@ public struct InboxView: View {
     public var body: some View {
         NavigationStack {
             Group {
-                if entries.isEmpty && unparsed.isEmpty {
+                if entries.isEmpty && unparsed.isEmpty && autoIgnored.isEmpty {
                     EmptyStateView(
                         symbolName: "tray",
                         title: "Inbox is clear",
@@ -57,6 +58,28 @@ public struct InboxView: View {
                                 }
                             }
                         }
+
+                        if !autoIgnored.isEmpty {
+                            Section {
+                                DisclosureGroup("Auto-ignored (\(autoIgnored.count))") {
+                                    ForEach(autoIgnored) { entry in
+                                        HStack(spacing: 12) {
+                                            InboxRowView(entry: entry)
+
+                                            Button("Undo") {
+                                                undo(entry)
+                                            }
+                                            .buttonStyle(.borderless)
+                                            .font(.caption.weight(.medium))
+                                        }
+                                    }
+                                }
+                            } footer: {
+                                Text(
+                                    "These match a message shape you ignored. Undo puts one back in Review and forgets the pattern."
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -86,9 +109,14 @@ public struct InboxView: View {
     private func reload() {
         entries = (try? inboxService.pending()) ?? []
         unparsed = (try? inboxService.unparsed()) ?? []
+        autoIgnored = (try? inboxService.autoIgnored()) ?? []
         if selected?.isSoftDeleted == true {
             selected = nil
         }
+    }
+
+    private func undo(_ entry: LedgerEntry) {
+        try? inboxService.undoAutoIgnore(entry)
     }
 
     private func dismiss(_ message: UnparsedMessage) {
@@ -137,29 +165,37 @@ private struct InboxRowView: View {
                 .background(.orange.opacity(0.12), in: .circle)
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline.weight(.medium))
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(title)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    AmountText(
+                        Money(minorUnits: entry.amountMinor, currency: entry.currency),
+                        style: .subheadline
+                    )
                     .lineLimit(1)
-
-                HStack(spacing: 4) {
-                    Text(entry.occurredAt, format: .dateTime.day().month(.abbreviated).hour().minute())
-                    if entry.account == nil {
-                        Text("· Needs account")
-                    }
+                    .layoutPriority(1)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-
-            Spacer(minLength: 8)
-
-            AmountText(Money(minorUnits: entry.amountMinor, currency: entry.currency), style: .subheadline)
         }
         .contentShape(.rect)
     }
 
     private var title: String {
         entry.payee.isEmpty ? entry.kind.displayName : entry.payee
+    }
+
+    private var subtitle: String {
+        let when = entry.occurredAt.formatted(.dateTime.day().month(.abbreviated).hour().minute())
+        return entry.account == nil ? "\(when) · Needs account" : when
     }
 }

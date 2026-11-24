@@ -16,6 +16,7 @@ nonisolated public struct IngestOutcome: Sendable, Equatable {
         case duplicate
         case needsReview
         case unrecognised
+        case ignored
     }
 
     public let status: Status
@@ -33,7 +34,7 @@ nonisolated public struct IngestOutcome: Sendable, Equatable {
 
 /// Turns a raw bank or mobile money message into a ledger entry, or refuses to guess.
 @Observable
-public final class IngestService: Loggable {
+nonisolated public final class IngestService: Loggable {
     private let context: ModelContext
     private let parser: ParserService
     private let accountService: AccountService
@@ -92,23 +93,44 @@ public final class IngestService: Loggable {
                 message.currencyCode.isEmpty || candidate.currencyCode == message.currencyCode
                     ? candidate : nil
             }
+
+        // The same bank reference on the same account is the same money, even when the
+        // wording around it changed enough to defeat the text hash.
+        if let existing = try existingEntry(account: account, externalRef: message.reference) {
+            return IngestOutcome(
+                status: .duplicate,
+                entryID: existing.id,
+                summary: "Already recorded: \(message.payee.isEmpty ? message.ruleName : message.payee)."
+            )
+        }
+
+        let effectiveSender = message.sender.isEmpty ? (sender ?? "") : message.sender
+        let fingerprint = TemplateFingerprint.make(sender: effectiveSender, text: text)
+
+        // A shape the user has already told us is not a transaction never needs Review.
+        let suppression = try suppressionMemory(fingerprint: fingerprint)
+
         let categoriser = CategoriserService(context: context)
         let suggestions =
-            (try? categoriser.suggest(
+            suppression == nil
+            ? (try? categoriser.suggest(
                 payee: message.payee,
                 amountMinor: message.amountMinor + message.feeMinor,
                 date: message.occurredAt,
                 account: account,
                 kind: message.messageType.categoryKind
             )) ?? []
+            : []
 
         // Only a merchant the user has explicitly trusted auto-files. Everything else waits
         // in the Inbox, because the user asked to categorise messages later.
         let autoCategory = suggestions.first { $0.isAutoApplicable }?.category
         var status: LedgerEntryStatus =
-            account == nil || message.confidence < 0.85 || autoCategory == nil
-            ? .needsReview
-            : .confirmed
+            suppression != nil
+            ? .ignored
+            : (account == nil || message.confidence < 0.85 || autoCategory == nil
+                ? .needsReview
+                : .confirmed)
 
         let entry = LedgerEntry(
             kind: message.messageType,
@@ -121,19 +143,25 @@ public final class IngestService: Loggable {
             source: .message
         )
         entry.account = account
-        entry.category = autoCategory
+        entry.category = suppression == nil ? autoCategory : nil
         entry.externalRef = message.reference
         entry.counterpartRef = message.counterpartReference
         entry.rawMessage = keepsRawMessages() ? message.rawText : ""
-        entry.messageSender = message.sender
+        entry.messageSender = effectiveSender
+        entry.ingestFingerprint = fingerprint
         entry.balanceAfterMinor = message.balanceAfterMinor
         entry.confidence = message.confidence
         entry.dedupeHash = hash
         entry.status = status
 
-        if message.messageType == .transferOut {
+        if suppression == nil, message.messageType == .transferOut {
             entry.status = .needsReview
             status = .needsReview
+        }
+
+        if let suppression {
+            suppression.hitCount += 1
+            suppression.lastSeenAt = Date()
         }
 
         context.insert(entry)
@@ -142,10 +170,19 @@ public final class IngestService: Loggable {
 
         let amount = Money(
             minorUnits: message.amountMinor, currency: CurrencyCatalog.currency(for: message.currencyCode))
-        let summary = "\(status == .confirmed ? "Recorded" : "Needs review"): \(amount.formatted()) \(message.payee)"
+        let label = message.payee.isEmpty ? message.ruleName : message.payee
+        let summary: String
+        switch status {
+            case .ignored:
+                summary = "Auto-ignored: \(label)."
+            case .confirmed:
+                summary = "Recorded: \(amount.formatted()) \(label)"
+            default:
+                summary = "Needs review: \(amount.formatted()) \(label)"
+        }
 
         return IngestOutcome(
-            status: status == .confirmed ? .recorded : .needsReview,
+            status: status == .confirmed ? .recorded : (status == .ignored ? .ignored : .needsReview),
             entryID: entry.id,
             summary: summary
         )
@@ -191,6 +228,34 @@ public final class IngestService: Loggable {
     private func existingEntry(hash: String) throws -> LedgerEntry? {
         var descriptor = FetchDescriptor<LedgerEntry>(
             predicate: #Predicate<LedgerEntry> { $0.dedupeHash == hash }
+        )
+        descriptor.fetchLimit = 1
+        return try context.fetch(descriptor).first
+    }
+
+    private func existingEntry(account: Account?, externalRef: String) throws -> LedgerEntry? {
+        guard let account, !externalRef.isEmpty else {
+            return nil
+        }
+
+        let reference = externalRef
+        var descriptor = FetchDescriptor<LedgerEntry>(
+            predicate: #Predicate<LedgerEntry> { $0.externalRef == reference && !$0.isSoftDeleted }
+        )
+        descriptor.fetchLimit = 20
+        return try context.fetch(descriptor).first { $0.account?.id == account.id }
+    }
+
+    private func suppressionMemory(fingerprint: String) throws -> IngestMemory? {
+        guard !fingerprint.isEmpty else {
+            return nil
+        }
+
+        let suppressed = IngestMemoryReason.notATransaction.rawValue
+        var descriptor = FetchDescriptor<IngestMemory>(
+            predicate: #Predicate<IngestMemory> {
+                $0.reasonRaw == suppressed && $0.fingerprint == fingerprint
+            }
         )
         descriptor.fetchLimit = 1
         return try context.fetch(descriptor).first

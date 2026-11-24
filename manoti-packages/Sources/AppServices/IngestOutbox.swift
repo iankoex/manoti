@@ -95,7 +95,6 @@ nonisolated public struct IngestOutbox: Sendable {
     /// Replays every parked message. A message is removed only after the ingest call
     /// returns, so a store failure leaves it for the next attempt.
     @discardableResult
-    @MainActor
     public func drain(into ingest: IngestService) throws -> Int {
         var processed = 0
 

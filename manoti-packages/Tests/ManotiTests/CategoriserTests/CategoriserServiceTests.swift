@@ -274,6 +274,76 @@ struct CategoriserServiceTests {
         #expect(!suggestions.contains { $0.reason == "Uber ride" })
     }
 
+    @Test("A near-miss payee suggests the remembered category")
+    func nearMissSuggestion() throws {
+        let context = try makeContext()
+        let categoriser = CategoriserService(context: context)
+        let fuel = try category("Fuel", in: context)
+
+        try categoriser.learn(payee: "Shell Bellevue", category: fuel)
+
+        let suggestions = try categoriser.suggest(
+            payee: "Shell Bellevue Nairobi",
+            amountMinor: 1_000
+        )
+
+        #expect(suggestions.contains { $0.category.id == fuel.id && $0.reason == "Similar merchant: Shell Bellevue" })
+        #expect(suggestions.first { $0.reason == "Similar merchant: Shell Bellevue" }?.confidence == 0.8)
+    }
+
+    @Test("A near-miss confirmation keeps one memory and records the spelling")
+    func aliasNearMiss() throws {
+        let context = try makeContext()
+        let categoriser = CategoriserService(context: context)
+        let fuel = try category("Fuel", in: context)
+
+        try categoriser.learn(payee: "Shell Bellevue", category: fuel)
+        try categoriser.learn(payee: "Shell Bellevue Nairobi", category: fuel)
+
+        let memories = try context.fetch(FetchDescriptor<MerchantMemory>())
+        let memory = try #require(memories.first)
+
+        #expect(memories.count == 1)
+        #expect(memory.timesSeen == 2)
+        #expect(memory.aliases?.contains { $0.aliasKey == "shell bellevue nairobi" } == true)
+    }
+
+    @Test("A merchant filed under two categories keeps the other one available")
+    func splitMerchant() throws {
+        let context = try makeContext()
+        let categoriser = CategoriserService(context: context)
+        let takeout = try category("Takeout", in: context)
+        let household = try category("Household", in: context)
+
+        try categoriser.learn(payee: "Glovo", category: takeout)
+        try categoriser.learn(payee: "Glovo", category: takeout)
+        try categoriser.learn(payee: "Glovo", category: household)
+
+        let suggestions = try categoriser.suggest(payee: "Glovo", amountMinor: 1_000)
+
+        #expect(suggestions.contains { $0.category.id == takeout.id })
+        #expect(suggestions.contains { $0.category.id == household.id })
+        #expect(suggestions.first?.category.id == household.id)
+    }
+
+    @Test("A merchant not seen for six months scores lower than a fresh one")
+    func recency() throws {
+        let context = try makeContext()
+        let categoriser = CategoriserService(context: context)
+        let fuel = try category("Fuel", in: context)
+
+        try categoriser.learn(payee: "Shell Bellevue", category: fuel)
+        let fresh = try #require(try categoriser.suggest(payee: "Shell Bellevue", amountMinor: 1_000).first)
+
+        let memory = try #require(try context.fetch(FetchDescriptor<MerchantMemory>()).first)
+        memory.lastSeenAt = Date().addingTimeInterval(-200 * 24 * 60 * 60)
+        try context.save()
+
+        let stale = try #require(try categoriser.suggest(payee: "Shell Bellevue", amountMinor: 1_000).first)
+        #expect(stale.confidence < fresh.confidence)
+        #expect(stale.confidence >= 0.8)
+    }
+
     @Test("Payee keywords fall back when no rule matches")
     func keywords() throws {
         let context = try makeContext()

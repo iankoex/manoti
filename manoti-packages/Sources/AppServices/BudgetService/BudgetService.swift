@@ -170,7 +170,7 @@ private struct BudgetActuals {
 /// `.expense` rows count; transfers, loan cash and investment cash are ignored even when a
 /// row happens to carry the expense kind.
 @Observable
-public final class BudgetService: Loggable {
+nonisolated public final class BudgetService: Loggable {
     private let context: ModelContext
     private let calendar: Calendar
 

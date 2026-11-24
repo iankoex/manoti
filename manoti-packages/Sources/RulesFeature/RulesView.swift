@@ -12,10 +12,13 @@ import SwiftUI
 
 public struct RulesView: View {
     @Environment(ParserService.self) private var parserService
+    @Environment(RuleService.self) private var ruleService
 
     @State private var ruleSets: [ParseRuleSet] = []
+    @State private var checks: [String] = []
     @State private var isTesting = false
     @State private var isShowingSetup = false
+    @State private var isCreatingRule = false
 
     public init() {}
 
@@ -25,7 +28,7 @@ public struct RulesView: View {
                 Section {
                     ForEach(ruleSet.orderedRules) { rule in
                         NavigationLink {
-                            RuleEditorView(rule: rule)
+                            RuleEditorView(rule: rule, ruleSets: ruleSets)
                         } label: {
                             RuleRow(rule: rule)
                         }
@@ -36,9 +39,28 @@ public struct RulesView: View {
                     Text(ruleSet.notes)
                 }
             }
+
+            if !checks.isEmpty {
+                Section("Checks") {
+                    ForEach(checks, id: \.self) { warning in
+                        Text(warning)
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
         }
         .navigationTitle("Message rules")
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    isCreatingRule = true
+                } label: {
+                    Label("New rule", systemImage: "plus")
+                }
+                .disabled(ruleSets.isEmpty)
+            }
+
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button("Test a message", systemImage: "text.bubble") {
@@ -58,11 +80,15 @@ public struct RulesView: View {
         .sheet(isPresented: $isShowingSetup) {
             ShortcutsSetupView()
         }
+        .navigationDestination(isPresented: $isCreatingRule) {
+            RuleEditorView(rule: nil, ruleSets: ruleSets)
+        }
         .onManotiDataChange { reload() }
     }
 
     private func reload() {
         ruleSets = (try? parserService.ruleSets()) ?? []
+        checks = (try? ruleService.collisionWarnings()) ?? []
     }
 }
 

@@ -18,7 +18,7 @@ public enum SettingsError: Error, Equatable {
 
 /// Cross-cutting app state: settings and the display currency.
 @Observable
-public final class AppService: Loggable {
+nonisolated public final class AppService: Loggable {
     private let context: ModelContext
 
     public private(set) var settings: AppSettings?

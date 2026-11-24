@@ -10,7 +10,7 @@ nonisolated extension Notification.Name {
     public static let manotiDataChanged = Notification.Name("com.iankoex.manoti.dataChanged")
 }
 
-public enum ManotiNotifications {
+nonisolated public enum ManotiNotifications {
     public static func postDataChanged() {
         NotificationCenter.default.post(name: .manotiDataChanged, object: nil)
     }

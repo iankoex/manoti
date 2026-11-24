@@ -5,7 +5,7 @@
 
 import Testing
 
-@testable import QuickAddFeature
+@testable import EntryFormFeature
 
 @Test("A group row says how many matching categories it holds")
 func groupRowText() {

@@ -56,6 +56,7 @@ struct ModelSchemaTests {
             ParseRule.self,
             MerchantMemory.self,
             MerchantAlias.self,
+            IngestMemory.self,
             SmartRule.self,
             ContextWindow.self,
             Loan.self,

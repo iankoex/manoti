@@ -154,6 +154,12 @@ public struct SettingsView: View {
             }
 
             NavigationLink {
+                IngestMemoryListView()
+            } label: {
+                Label("Learned messages", systemImage: "text.badge.checkmark")
+            }
+
+            NavigationLink {
                 ReconcileView()
             } label: {
                 HStack {

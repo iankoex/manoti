@@ -17,6 +17,8 @@ public final class UnparsedMessage {
     public var reason: String = ""
     public var dedupeHash: String = ""
     public var createdAt: Date = Date()
+    /// Kept when the user dismisses the row, so the same message shape is not new work.
+    public var isDismissed: Bool = false
 
     public init(
         rawText: String,

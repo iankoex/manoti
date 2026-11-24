@@ -6,7 +6,7 @@
 import Foundation
 
 /// A difference between an expected coupon and what was actually recorded.
-public struct ScheduleMismatch: Equatable, Sendable, Identifiable {
+nonisolated public struct ScheduleMismatch: Equatable, Sendable, Identifiable {
     public enum Kind: String, Equatable, Sendable {
         case missing
         case amountMismatch

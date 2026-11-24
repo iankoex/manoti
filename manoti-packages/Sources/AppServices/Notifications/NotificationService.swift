@@ -15,7 +15,7 @@ import UserNotifications
 /// recurring requests and preserves an imminent budget or large-transaction alert until it
 /// has fired.
 @Observable
-public final class NotificationService: Loggable {
+nonisolated public final class NotificationService: Loggable {
     public static let identifierPrefix = "manoti."
 
     private static let budgetIdentifierPrefix = "manoti.budget."

@@ -11,8 +11,7 @@ import UserNotifications
 @testable import AppModels
 @testable import AppServices
 
-@MainActor
-private final class FakeNotificationCenter: UserNotificationCentering {
+nonisolated private final class FakeNotificationCenter: UserNotificationCentering {
     var authorized = true
     var authorization: UNAuthorizationStatus = .authorized
     var failingIdentifiers: Set<String> = []

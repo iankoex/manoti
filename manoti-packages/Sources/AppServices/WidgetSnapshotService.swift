@@ -42,7 +42,7 @@ nonisolated public struct WidgetSnapshot: Codable, Equatable, Sendable {
 
 /// Builds and writes the widget snapshot into the shared app group.
 @Observable
-public final class WidgetSnapshotService: Loggable {
+nonisolated public final class WidgetSnapshotService: Loggable {
     public static let appGroupIdentifier = "group.com.iankoex.manoti"
     public static let filename = "widget-snapshot.json"
 

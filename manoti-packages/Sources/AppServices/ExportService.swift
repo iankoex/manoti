@@ -128,6 +128,7 @@ public final class ExportService: Loggable {
         try context.delete(model: Loan.self)
         try context.delete(model: MerchantAlias.self)
         try context.delete(model: MerchantMemory.self)
+        try context.delete(model: IngestMemory.self)
         try context.delete(model: SmartRule.self)
         try context.delete(model: ParseRule.self)
         try context.delete(model: ParseRuleSet.self)
@@ -275,6 +276,7 @@ public final class ExportService: Loggable {
         let identifiers = try context.fetch(FetchDescriptor<AccountIdentifier>())
         let merchantMemories = try context.fetch(FetchDescriptor<MerchantMemory>())
         let merchantAliases = try context.fetch(FetchDescriptor<MerchantAlias>())
+        let ingestMemories = try context.fetch(FetchDescriptor<IngestMemory>())
         let smartRules = try context.fetch(FetchDescriptor<SmartRule>())
         let ruleSets = try context.fetch(FetchDescriptor<ParseRuleSet>())
         let parseRules = try context.fetch(FetchDescriptor<ParseRule>())
@@ -302,6 +304,7 @@ public final class ExportService: Loggable {
             accountIdentifiers: sortedByID(identifiers, id: \.id).map(backup),
             merchantMemories: sortedByID(merchantMemories, id: \.id).map(backup),
             merchantAliases: sortedByID(merchantAliases, id: \.id).map(backup),
+            ingestMemories: sortedByID(ingestMemories, id: \.id).map(backup),
             smartRules: sortedByID(smartRules, id: \.id).map(backup),
             parseRuleSets: sortedByID(ruleSets, id: \.id).map(backup),
             parseRules: sortedByID(parseRules, id: \.id).map(backup),
@@ -407,7 +410,8 @@ public final class ExportService: Loggable {
             timesSeen: memory.timesSeen,
             lastSeenAt: memory.lastSeenAt,
             autoApply: memory.autoApply,
-            createdAt: memory.createdAt
+            createdAt: memory.createdAt,
+            categoryCountsJSON: memory.categoryCountsJSON
         )
     }
 
@@ -416,6 +420,21 @@ public final class ExportService: Loggable {
             id: alias.id,
             aliasKey: alias.aliasKey,
             merchantMemoryID: alias.merchantMemory?.id
+        )
+    }
+
+    private func backup(_ memory: IngestMemory) -> BackupIngestMemory {
+        BackupIngestMemory(
+            id: memory.id,
+            sender: memory.sender,
+            fingerprint: memory.fingerprint,
+            reasonRaw: memory.reasonRaw,
+            amountMinor: memory.amountMinor,
+            kindRaw: memory.kindRaw,
+            externalRef: memory.externalRef,
+            hitCount: memory.hitCount,
+            lastSeenAt: memory.lastSeenAt,
+            createdAt: memory.createdAt
         )
     }
 
@@ -486,7 +505,8 @@ public final class ExportService: Loggable {
             isSoftDeleted: entry.isSoftDeleted,
             transferID: entry.transfer?.id,
             loanID: entry.loan?.id,
-            investmentCashFlowID: entry.investmentCashFlow?.id
+            investmentCashFlowID: entry.investmentCashFlow?.id,
+            ingestFingerprint: entry.ingestFingerprint
         )
     }
 
@@ -674,6 +694,7 @@ public final class ExportService: Loggable {
         var identifiers = try index(AccountIdentifier.self, id: \.id)
         var memories = try index(MerchantMemory.self, id: \.id)
         var aliases = try index(MerchantAlias.self, id: \.id)
+        var ingestMemories = try index(IngestMemory.self, id: \.id)
         var smartRules = try index(SmartRule.self, id: \.id)
         var ruleSets = try index(ParseRuleSet.self, id: \.id)
         var parseRules = try index(ParseRule.self, id: \.id)
@@ -797,6 +818,25 @@ public final class ExportService: Loggable {
                 backup.id,
                 in: &aliases,
                 create: { MerchantAlias(aliasKey: backup.aliasKey) },
+                apply: { apply(backup, to: $0) }
+            ) {
+                inserted += 1
+            } else {
+                updated += 1
+            }
+        }
+
+        for backup in document.ingestMemories ?? [] {
+            if upsert(
+                backup.id,
+                in: &ingestMemories,
+                create: {
+                    IngestMemory(
+                        sender: backup.sender,
+                        fingerprint: backup.fingerprint,
+                        reason: IngestMemoryReason(rawValue: backup.reasonRaw) ?? .notATransaction
+                    )
+                },
                 apply: { apply(backup, to: $0) }
             ) {
                 inserted += 1
@@ -1560,11 +1600,25 @@ public final class ExportService: Loggable {
         memory.lastSeenAt = backup.lastSeenAt
         memory.autoApply = backup.autoApply
         memory.createdAt = backup.createdAt
+        memory.categoryCountsJSON = backup.categoryCountsJSON ?? ""
     }
 
     private func apply(_ backup: BackupMerchantAlias, to alias: MerchantAlias) {
         alias.id = backup.id
         alias.aliasKey = backup.aliasKey
+    }
+
+    private func apply(_ backup: BackupIngestMemory, to memory: IngestMemory) {
+        memory.id = backup.id
+        memory.sender = backup.sender
+        memory.fingerprint = backup.fingerprint
+        memory.reasonRaw = backup.reasonRaw
+        memory.amountMinor = backup.amountMinor
+        memory.kindRaw = backup.kindRaw
+        memory.externalRef = backup.externalRef
+        memory.hitCount = backup.hitCount
+        memory.lastSeenAt = backup.lastSeenAt
+        memory.createdAt = backup.createdAt
     }
 
     private func apply(_ backup: BackupSmartRule, to rule: SmartRule) {
@@ -1620,6 +1674,7 @@ public final class ExportService: Loggable {
         entry.statusRaw = backup.statusRaw
         entry.confidence = backup.confidence
         entry.dedupeHash = backup.dedupeHash
+        entry.ingestFingerprint = backup.ingestFingerprint ?? ""
         entry.isSoftDeleted = backup.isSoftDeleted
     }
 

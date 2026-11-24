@@ -30,8 +30,13 @@ public struct ContentView: View {
     @State private var tab: AppTab = .home
     @State private var isAdding = false
     @State private var isShowingReconcile = false
+    @State private var isShowingRulesUpdate = false
 
-    public init() {}
+    private let rulesUpdate: SharedRulesUpdate?
+
+    public init(rulesUpdate: SharedRulesUpdate? = nil) {
+        self.rulesUpdate = rulesUpdate
+    }
 
     public var body: some View {
         TabView(selection: $tab) {
@@ -91,6 +96,32 @@ public struct ContentView: View {
                     .environment(\.manotiAmountsHidden, privacyService.isAmountsHidden)
             }
         }
+        .onAppear {
+            isShowingRulesUpdate = rulesUpdate != nil
+        }
+        .alert("Message rules updated", isPresented: $isShowingRulesUpdate) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(rulesUpdateSummary)
+        }
+    }
+
+    private var rulesUpdateSummary: String {
+        guard let rulesUpdate else {
+            return ""
+        }
+
+        let noun = rulesUpdate.ruleCount == 1 ? "rule" : "rules"
+        var message =
+            "Manoti refreshed \(rulesUpdate.ruleCount) shared \(noun) for reading bank and mobile-money messages. Review them in Message rules."
+
+        if rulesUpdate.skippedCount > 0 {
+            let skippedNoun = rulesUpdate.skippedCount == 1 ? "rule was" : "rules were"
+            message +=
+                " \(rulesUpdate.skippedCount) \(skippedNoun) skipped because your own rules already cover them."
+        }
+
+        return message
     }
 
     private func presentExpense() {

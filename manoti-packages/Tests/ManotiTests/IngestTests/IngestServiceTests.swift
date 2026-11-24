@@ -204,6 +204,50 @@ struct IngestServiceTests {
         #expect(stored.account != nil)
     }
 
+    @Test("A shape the user ignored is auto-ignored on the next arrival")
+    func suppression() throws {
+        let (accounts, ingest, context) = try makeServices()
+        try accounts.create(name: "M-Pesa", kind: .mobileMoney)
+
+        let first = try ingest.ingest(text: paid, sender: "M-PESA")
+        let firstEntry = try #require(try entry(for: first, in: context))
+        try InboxService(context: context).ignore(firstEntry, reason: .notATransaction)
+
+        let variant =
+            "UKL6H2AF99 Confirmed. Ksh2,000.00 paid to Nixomb Limited - Shell Bellevue. on 22/11/26 at 1:00 AM.New M-PESA balance is Ksh1,000.00. Transaction cost, Ksh8.30."
+        let second = try ingest.ingest(text: variant, sender: "M-PESA")
+        let stored = try #require(try entry(for: second, in: context))
+
+        #expect(second.status == .ignored)
+        #expect(stored.status == .ignored)
+
+        let memories = try context.fetch(FetchDescriptor<IngestMemory>())
+        #expect(memories.first?.hitCount == 2)
+    }
+
+    @Test("The same bank reference on the same account is a duplicate")
+    func externalReferenceDuplicate() throws {
+        let (accounts, ingest, context) = try makeServices()
+        let mobile = try accounts.create(name: "M-Pesa", kind: .mobileMoney)
+
+        let existing = LedgerEntry(
+            kind: .expense,
+            amountMinor: 151_000,
+            currencyCode: "KES",
+            payee: "Shell",
+            source: .message
+        )
+        existing.account = mobile
+        existing.externalRef = "UKL6H2AF65"
+        context.insert(existing)
+        try context.save()
+
+        let outcome = try ingest.ingest(text: paid, sender: "M-PESA")
+
+        #expect(outcome.status == .duplicate)
+        #expect(outcome.entryID == existing.id)
+    }
+
     @Test("Unrecognised text is kept for review, not posted")
     func unrecognised() throws {
         let (accounts, ingest, context) = try makeServices()

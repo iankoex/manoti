@@ -40,9 +40,11 @@ extension LedgerError: LocalizedError {
 @Observable
 public final class LedgerService: Loggable {
     private let context: ModelContext
+    private let categoriser: CategoriserService
 
     public init(context: ModelContext) {
         self.context = context
+        self.categoriser = CategoriserService(context: context)
     }
 
     @discardableResult
@@ -95,6 +97,13 @@ public final class LedgerService: Loggable {
         entry.status = status
 
         context.insert(entry)
+
+        // Only a person's own filing teaches the merchant. Ingest and reconciliation
+        // create rows directly and are not evidence of a preference.
+        if (source == .manual || source == .shortcut), let category, !entry.payee.isEmpty {
+            try categoriser.recordLearning(payee: entry.payee, category: category, account: account)
+        }
+
         try context.save()
         ManotiNotifications.postDataChanged()
         return entry
@@ -154,6 +163,7 @@ public final class LedgerService: Loggable {
             || entry.feeMinor != feeMinor
             || entry.occurredAt != occurredAt
             || entry.currencyCode != account.currencyCode
+        let previousCategoryID = entry.category?.id
 
         entry.kind = kind
         entry.amountMinor = amountMinor
@@ -168,6 +178,12 @@ public final class LedgerService: Loggable {
         if movedAnchor {
             // The reported bank balance belongs to the old account, amount and date.
             entry.balanceAfterMinor = nil
+        }
+
+        // A correction is the strongest signal there is; an edit that leaves the
+        // category alone must not inflate the count.
+        if previousCategoryID != category?.id, let category, !entry.payee.isEmpty {
+            try categoriser.recordLearning(payee: entry.payee, category: category, account: account)
         }
 
         try context.save()
@@ -204,6 +220,21 @@ public final class LedgerService: Loggable {
         )
         descriptor.fetchLimit = limit
         return try context.fetch(descriptor)
+    }
+
+    /// Every entry the transactions screen can show, newest first.
+    public func transactions() throws -> [LedgerEntry] {
+        try context.fetch(
+            FetchDescriptor<LedgerEntry>(
+                predicate: #Predicate<LedgerEntry> {
+                    !$0.isSoftDeleted && $0.kindRaw != "openingBalance" && $0.statusRaw != "ignored"
+                },
+                sortBy: [
+                    SortDescriptor(\LedgerEntry.occurredAt, order: .reverse),
+                    SortDescriptor(\LedgerEntry.createdAt, order: .reverse),
+                ]
+            )
+        )
     }
 
     public func balance(for account: Account) -> Money {

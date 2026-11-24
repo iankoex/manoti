@@ -11,7 +11,7 @@ import SwiftData
 
 /// Reads bank and mobile-money messages using the stored, editable rule sets.
 @Observable
-public final class ParserService: Loggable {
+nonisolated public final class ParserService: Loggable {
     private let context: ModelContext
 
     public init(context: ModelContext) {
@@ -185,6 +185,14 @@ public final class ParserService: Loggable {
             .trimmingCharacters(in: CharacterSet(charactersIn: ".:"))
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    /// Whitespace-collapsed, uppercased pattern used only for duplicate detection.
+    static func normalisedPattern(_ pattern: String) -> String {
+        pattern
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased()
+    }
 }
 
 nonisolated enum Normaliser {
@@ -203,14 +211,14 @@ nonisolated enum Normaliser {
     }
 }
 
-extension ParserService {
+nonisolated extension ParserService {
     /// Whitespace-collapsed, lowercased text used only for hashing.
     nonisolated static func normaliseForHash(_ text: String) -> String {
         Normaliser.normalise(text).lowercased()
     }
 }
 
-enum FriendlyText {
+nonisolated enum FriendlyText {
     static func payee(_ value: String?, in rawText: String) -> String {
         let cleaned = ParserService.cleaned(value)
         guard !cleaned.isEmpty else {

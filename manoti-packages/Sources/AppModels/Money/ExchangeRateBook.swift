@@ -11,7 +11,7 @@ import Foundation
 /// conversion date, so adding a later rate never rewrites an earlier transaction. Both
 /// directions of a pair are considered, and the newer record wins even when it was stored
 /// as the inverse of the requested pair.
-public struct ExchangeRateBook: Sendable {
+nonisolated public struct ExchangeRateBook: Sendable {
     private struct DatedRate: Sendable {
         let asOf: Date
         let createdAt: Date

@@ -28,6 +28,7 @@ let package = Package(
         .library(name: "PlanFeature", targets: ["PlanFeature"]),
         .library(name: "BudgetFeature", targets: ["BudgetFeature"]),
         .library(name: "QuickAddFeature", targets: ["QuickAddFeature"]),
+        .library(name: "EntryFormFeature", targets: ["EntryFormFeature"]),
         .library(name: "LedgerFeature", targets: ["LedgerFeature"]),
         .library(name: "TransfersFeature", targets: ["TransfersFeature"]),
         .library(name: "InboxFeature", targets: ["InboxFeature"]),
@@ -52,6 +53,7 @@ let package = Package(
         .target(
             name: "AppServices",
             dependencies: ["AppModels", "AppPackageExtensions"],
+            resources: [.process("Resources")],
             swiftSettings: swiftSettings
         ),
         .target(
@@ -104,12 +106,20 @@ let package = Package(
         ),
         .target(
             name: "QuickAddFeature",
-            dependencies: ["AppModels", "AppServices", "Modifiers", "AppPackageExtensions", "TransfersFeature"],
+            dependencies: [
+                "AppModels", "AppServices", "Modifiers", "AppPackageExtensions", "TransfersFeature",
+                "EntryFormFeature",
+            ],
+            swiftSettings: swiftSettings
+        ),
+        .target(
+            name: "EntryFormFeature",
+            dependencies: ["AppModels", "AppServices", "Modifiers", "AppPackageExtensions"],
             swiftSettings: swiftSettings
         ),
         .target(
             name: "LedgerFeature",
-            dependencies: ["AppModels", "AppServices", "Modifiers"],
+            dependencies: ["AppModels", "AppServices", "Modifiers", "EntryFormFeature"],
             swiftSettings: swiftSettings
         ),
         .target(
@@ -132,7 +142,8 @@ let package = Package(
         .target(
             name: "InboxFeature",
             dependencies: [
-                "AppModels", "AppServices", "Modifiers", "AppPackageExtensions", "RulesFeature", "SettingsFeature",
+                "AppModels", "AppServices", "Modifiers", "AppPackageExtensions", "RulesFeature",
+                "SettingsFeature", "EntryFormFeature",
             ],
             swiftSettings: swiftSettings
         ),
@@ -164,7 +175,7 @@ let package = Package(
             dependencies: [
                 "AppModels", "AppPackageExtensions", "AppServices", "Automation", "LoansFeature", "InvestmentsFeature",
                 "BudgetFeature", "LedgerFeature", "SettingsFeature", "ReconcileFeature", "InsightsFeature",
-                "QuickAddFeature", "TransfersFeature",
+                "QuickAddFeature", "TransfersFeature", "EntryFormFeature",
             ],
             swiftSettings: swiftSettings
         ),

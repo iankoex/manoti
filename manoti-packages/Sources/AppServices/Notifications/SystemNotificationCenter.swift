@@ -12,8 +12,7 @@ nonisolated public enum NotificationSchedulingError: Error, Equatable, Sendable 
 
 /// Local-notification delivery through `UNUserNotificationCenter`. No remote or push path
 /// exists anywhere in Manoti.
-@MainActor
-public struct SystemNotificationCenter: UserNotificationCentering {
+nonisolated public struct SystemNotificationCenter: UserNotificationCentering {
     private let center: UNUserNotificationCenter
 
     public init(center: UNUserNotificationCenter = .current()) {

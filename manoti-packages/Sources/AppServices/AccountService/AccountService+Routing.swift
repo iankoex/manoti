@@ -6,7 +6,7 @@
 import AppModels
 import Foundation
 
-extension AccountService {
+nonisolated extension AccountService {
     /// Routes an incoming message to one of the user's own accounts.
     ///
     /// Never guesses between several accounts: if the most specific identifier matches more

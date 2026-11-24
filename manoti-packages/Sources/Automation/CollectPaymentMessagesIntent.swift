@@ -162,10 +162,11 @@ public struct CollectPaymentMessagesIntent: AppIntent {
         var recorded = 0
         var needsReview = 0
         var duplicate = 0
+        var ignored = 0
         var unread = 0
 
         var total: Int {
-            recorded + needsReview + duplicate + unread
+            recorded + needsReview + duplicate + ignored + unread
         }
 
         mutating func add(_ status: IngestOutcome.Status) {
@@ -176,6 +177,8 @@ public struct CollectPaymentMessagesIntent: AppIntent {
                     needsReview += 1
                 case .duplicate:
                     duplicate += 1
+                case .ignored:
+                    ignored += 1
                 case .unrecognised:
                     unread += 1
             }
@@ -186,6 +189,10 @@ public struct CollectPaymentMessagesIntent: AppIntent {
 
             if duplicate > 0 {
                 parts.append("\(duplicate) already recorded")
+            }
+
+            if ignored > 0 {
+                parts.append("\(ignored) ignored")
             }
 
             if unread > 0 {

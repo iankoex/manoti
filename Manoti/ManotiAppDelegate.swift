@@ -19,6 +19,13 @@ final class ManotiAppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        // Register here rather than in the composition root: a background App Intent can run
+        // before `AppRoot` is constructed, and BackgroundTasks rejects handlers registered after
+        // launch completes. Registration is idempotent, so AppRoot may still call it.
+        if let container = AppStore.container() {
+            AppBackgroundScheduler.register(container: container)
+        }
+
         Task { await ManotiCloudSubscriptions.installIfNeeded() }
         return true
     }
@@ -34,7 +41,9 @@ final class ManotiAppDelegate: NSObject, UIApplicationDelegate {
                 return
             }
 
-            await AppMaintenance(context: container.mainContext)
+            // A silent push can arrive while the app is inactive, so run the pipeline on a
+            // private background context instead of the main one.
+            await MaintenanceWorker(modelContainer: container)
                 .runAfterWrite(promptForNotifications: false)
             completionHandler(.newData)
         }

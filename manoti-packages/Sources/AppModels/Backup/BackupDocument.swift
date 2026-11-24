@@ -28,6 +28,8 @@ nonisolated public struct BackupDocument: Codable, Sendable {
     public var accountIdentifiers: [BackupAccountIdentifier]
     public var merchantMemories: [BackupMerchantMemory]
     public var merchantAliases: [BackupMerchantAlias]
+    /// Optional so backups written before inbox learning still decode.
+    public var ingestMemories: [BackupIngestMemory]?
     public var smartRules: [BackupSmartRule]
     public var parseRuleSets: [BackupParseRuleSet]
     public var parseRules: [BackupParseRule]
@@ -55,6 +57,7 @@ nonisolated public struct BackupDocument: Codable, Sendable {
         accountIdentifiers: [BackupAccountIdentifier],
         merchantMemories: [BackupMerchantMemory],
         merchantAliases: [BackupMerchantAlias],
+        ingestMemories: [BackupIngestMemory]? = nil,
         smartRules: [BackupSmartRule],
         parseRuleSets: [BackupParseRuleSet],
         parseRules: [BackupParseRule],
@@ -83,6 +86,7 @@ nonisolated public struct BackupDocument: Codable, Sendable {
         self.accountIdentifiers = accountIdentifiers
         self.merchantMemories = merchantMemories
         self.merchantAliases = merchantAliases
+        self.ingestMemories = ingestMemories
         self.smartRules = smartRules
         self.parseRuleSets = parseRuleSets
         self.parseRules = parseRules
@@ -431,6 +435,8 @@ nonisolated public struct BackupMerchantMemory: Codable, Sendable {
     public var lastSeenAt: Date
     public var autoApply: Bool
     public var createdAt: Date
+    /// Optional so backups written before per-category counts still decode.
+    public var categoryCountsJSON: String?
 
     public init(
         id: UUID,
@@ -441,7 +447,8 @@ nonisolated public struct BackupMerchantMemory: Codable, Sendable {
         timesSeen: Int,
         lastSeenAt: Date,
         autoApply: Bool,
-        createdAt: Date
+        createdAt: Date,
+        categoryCountsJSON: String? = nil
     ) {
         self.id = id
         self.merchantKey = merchantKey
@@ -452,6 +459,7 @@ nonisolated public struct BackupMerchantMemory: Codable, Sendable {
         self.lastSeenAt = lastSeenAt
         self.autoApply = autoApply
         self.createdAt = createdAt
+        self.categoryCountsJSON = categoryCountsJSON
     }
 }
 
@@ -594,6 +602,8 @@ nonisolated public struct BackupLedgerEntry: Codable, Sendable {
     public var transferID: UUID?
     public var loanID: UUID?
     public var investmentCashFlowID: UUID?
+    /// Optional so backups written before fingerprints still decode.
+    public var ingestFingerprint: String?
 
     public init(
         id: UUID,
@@ -619,7 +629,8 @@ nonisolated public struct BackupLedgerEntry: Codable, Sendable {
         isSoftDeleted: Bool,
         transferID: UUID?,
         loanID: UUID?,
-        investmentCashFlowID: UUID?
+        investmentCashFlowID: UUID?,
+        ingestFingerprint: String? = nil
     ) {
         self.id = id
         self.occurredAt = occurredAt
@@ -645,6 +656,7 @@ nonisolated public struct BackupLedgerEntry: Codable, Sendable {
         self.transferID = transferID
         self.loanID = loanID
         self.investmentCashFlowID = investmentCashFlowID
+        self.ingestFingerprint = ingestFingerprint
     }
 }
 
@@ -1064,5 +1076,42 @@ nonisolated public struct BackupBudgetAlert: Codable, Sendable {
         self.lastTriggeredPeriodStart = lastTriggeredPeriodStart
         self.createdAt = createdAt
         self.envelopeID = envelopeID
+    }
+}
+
+nonisolated public struct BackupIngestMemory: Codable, Sendable {
+    public var id: UUID
+    public var sender: String
+    public var fingerprint: String
+    public var reasonRaw: String
+    public var amountMinor: Int64
+    public var kindRaw: String
+    public var externalRef: String
+    public var hitCount: Int
+    public var lastSeenAt: Date
+    public var createdAt: Date
+
+    public init(
+        id: UUID,
+        sender: String,
+        fingerprint: String,
+        reasonRaw: String,
+        amountMinor: Int64,
+        kindRaw: String,
+        externalRef: String,
+        hitCount: Int,
+        lastSeenAt: Date,
+        createdAt: Date
+    ) {
+        self.id = id
+        self.sender = sender
+        self.fingerprint = fingerprint
+        self.reasonRaw = reasonRaw
+        self.amountMinor = amountMinor
+        self.kindRaw = kindRaw
+        self.externalRef = externalRef
+        self.hitCount = hitCount
+        self.lastSeenAt = lastSeenAt
+        self.createdAt = createdAt
     }
 }

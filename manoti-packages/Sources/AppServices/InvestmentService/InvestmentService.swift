@@ -42,7 +42,7 @@ extension InvestmentError: LocalizedError {
 /// source of truth. Purchases and redemptions are asset transfers, not spending; coupons
 /// are income net of withholding tax.
 @Observable
-public final class InvestmentService: Loggable {
+nonisolated public final class InvestmentService: Loggable {
     let context: ModelContext
 
     public init(context: ModelContext) {

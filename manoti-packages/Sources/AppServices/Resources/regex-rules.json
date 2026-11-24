@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "revision": 1,
+  "updatedAt": "2026-11-23T00:00:00Z",
+  "rules": [
+    {
+      "key": "bank-cash-deposit",
+      "name": "Cash deposit",
+      "type": "income",
+      "pattern": "CASH DEPOSIT TRANSACTION OF\\s+(?<amount>(?:KSH|KES|KSHS)\\s?[\\d,]+(?:\\.\\d{1,2})?)\\s+(?:BY\\s+[0-9*]+\\s+)?TO\\s+AC/NO\\s+(?<payee>.+?)\\s+\\((?<date>\\d{1,2}-\\d{1,2}-\\d{4})\\s+AT\\s+(?<time>\\d{1,2}:\\d{2}:\\d{2})\\)\\s+ON\\s+(?<ref>[A-Z0-9]+)\\s+WAS SUCCESSFUL",
+      "fieldPatterns": {},
+      "sample": "Dear Customer, your cash deposit transaction of KES 2,900.00 by 012*******0123 to AC/NO IAN KIPRONO (16-11-2026 at 17:36:02) on LSK126320012 was successful. CDM Ref . Thank you. For Enquiry, contact us on 0719 088 000 or 0732 100 000. I&M Bank Ltd.On Your Side."
+    },
+    {
+      "key": "mpesa-sent-to-paybill",
+      "name": "Sent to a paybill",
+      "type": "expense",
+      "pattern": "^(?<ref>[A-Z0-9]{10})\\s+CONFIRMED\\.?\\s+(?<amount>(?:KSH|KES|KSHS)\\s?[\\d,]+(?:\\.\\d{1,2})?)\\s+SENT TO\\s+(?<payee>.+?)\\s+FOR ACCOUNT\\s+\\d+\\s+ON\\s+(?<date>\\d{1,2}/\\d{1,2}/\\d{2,4})\\s+AT\\s+(?<time>\\d{1,2}:\\d{2})\\s*(?<ampm>[AP]M)",
+      "fieldPatterns": {
+        "fee": "TRANSACTION COST,?\\s*(?<fee>(?:KSH|KES|KSHS)\\s?[\\d,]+(?:\\.\\d{1,2})?)",
+        "balance": "NEW M-PESA BALANCE IS\\s*(?<balance>(?:KSH|KES|KSHS)\\s?[\\d,]+(?:\\.\\d{1,2})?)"
+      },
+      "sample": "UKN6H2LLXH Confirmed. Ksh100.00 sent to KPLC PREPAID for account 22213031655 on 23/11/26 at 8:10 PM New M-PESA balance is Ksh1,275.68. Transaction cost, Ksh0.00.Amount you can transact within the day is 497,620.00. See all your balances now https://saf.cx/kWQpy"
+    },
+    {
+      "key": "mpesa-sent-to-person",
+      "name": "Sent to a person",
+      "type": "expense",
+      "pattern": "^(?<ref>[A-Z0-9]{10})\\s+CONFIRMED\\.?\\s+(?<amount>(?:KSH|KES|KSHS)\\s?[\\d,]+(?:\\.\\d{1,2})?)\\s+SENT TO\\s+(?<payee>.+?)\\s+ON\\s+(?<date>\\d{1,2}/\\d{1,2}/\\d{2,4})\\s+AT\\s+(?<time>\\d{1,2}:\\d{2})\\s*(?<ampm>[AP]M)",
+      "fieldPatterns": {
+        "fee": "TRANSACTION COST,?\\s*(?<fee>(?:KSH|KES|KSHS)\\s?[\\d,]+(?:\\.\\d{1,2})?)",
+        "balance": "NEW M-PESA BALANCE IS\\s*(?<balance>(?:KSH|KES|KSHS)\\s?[\\d,]+(?:\\.\\d{1,2})?)"
+      },
+      "sample": "UKN6H2LQAK Confirmed. Ksh200.00 sent to JANET  MORANG'A 0798734779 on 23/11/26 at 8:16 PM. New M-PESA balance is Ksh1,068.68. Transaction cost, Ksh7.00.  Amount you can transact within the day is 497,420.00. See all your balances now https://saf.cx/iqIzU"
+    }
+  ]
+}

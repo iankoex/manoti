@@ -20,7 +20,7 @@ struct ManotiApp: App {
     var body: some Scene {
         WindowGroup {
             if let dependencies = root.dependencies {
-                ContentView()
+                ContentView(rulesUpdate: dependencies.rulesUpdateNotice)
                     .environment(dependencies.appService)
                     .environment(dependencies.privacyService)
                     .environment(dependencies.notificationService)

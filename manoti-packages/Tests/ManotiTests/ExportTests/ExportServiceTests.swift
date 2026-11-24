@@ -463,6 +463,7 @@ struct ExportServiceTests {
             "SpendingCategory": try context.fetchCount(FetchDescriptor<SpendingCategory>()),
             "MerchantMemory": try context.fetchCount(FetchDescriptor<MerchantMemory>()),
             "MerchantAlias": try context.fetchCount(FetchDescriptor<MerchantAlias>()),
+            "IngestMemory": try context.fetchCount(FetchDescriptor<IngestMemory>()),
             "SmartRule": try context.fetchCount(FetchDescriptor<SmartRule>()),
             "ParseRuleSet": try context.fetchCount(FetchDescriptor<ParseRuleSet>()),
             "ParseRule": try context.fetchCount(FetchDescriptor<ParseRule>()),

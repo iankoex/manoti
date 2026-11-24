@@ -659,7 +659,7 @@ struct ReconciliationServiceTests {
 
     @Test("Both reconcile models are in the schema and keep their inverse")
     func schemaAndInverse() throws {
-        #expect(ManotiSchema.models.count == 26)
+        #expect(ManotiSchema.models.count == 27)
         #expect(ManotiSchema.models.contains { $0 == ReconcileSession.self })
         #expect(ManotiSchema.models.contains { $0 == ReconcileMessage.self })
 

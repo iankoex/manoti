@@ -46,7 +46,7 @@ nonisolated public struct InvestmentSummary: Equatable, Sendable {
     }
 }
 
-extension InvestmentService {
+nonisolated extension InvestmentService {
     /// Active holdings only: pending settlements and matured rows are excluded.
     ///
     /// A missing rate is marked and converted 1:1 in major units, exactly like account

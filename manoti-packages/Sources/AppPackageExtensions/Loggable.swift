@@ -13,12 +13,12 @@ public enum LogLevel: String, Sendable {
     case error
 }
 
-public protocol Loggable {
+nonisolated public protocol Loggable {
     var logCategory: String { get }
     func log(_ message: String, level: LogLevel)
 }
 
-extension Loggable {
+nonisolated extension Loggable {
     public var logCategory: String {
         String(describing: Self.self)
     }

@@ -8,8 +8,8 @@ import Foundation
 /// Shared key handling for the custom numeric keypad.
 nonisolated public enum AmountEntry {
     /// Applies one key to an editable major-unit string, allowing one decimal point and at
-    /// most two decimal places.
-    public static func apply(_ key: String, to text: inout String) {
+    /// most `exponent` decimal places.
+    public static func apply(_ key: String, to text: inout String, exponent: Int = 2) {
         if key == "⌫" {
             if !text.isEmpty {
                 text.removeLast()
@@ -18,7 +18,7 @@ nonisolated public enum AmountEntry {
         }
 
         if key == "." {
-            guard !text.contains(".") else {
+            guard exponent > 0, !text.contains(".") else {
                 return
             }
 
@@ -28,7 +28,7 @@ nonisolated public enum AmountEntry {
 
         if let dotIndex = text.firstIndex(of: ".") {
             let decimals = text.distance(from: dotIndex, to: text.endIndex) - 1
-            guard decimals < 2 else {
+            guard decimals < max(0, exponent) else {
                 return
             }
         }

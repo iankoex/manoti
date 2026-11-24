@@ -429,9 +429,27 @@ private struct RecentSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Recent")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+            HStack {
+                Text("Recent")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                NavigationLink {
+                    TransactionsView()
+                } label: {
+                    HStack(spacing: 3) {
+                        Text("See all")
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                    }
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("See all transactions")
+            }
 
             if entries.isEmpty {
                 Text("Nothing recorded yet.")

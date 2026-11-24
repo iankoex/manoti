@@ -6,6 +6,7 @@
 import AppModels
 import AppPackageExtensions
 import AppServices
+import EntryFormFeature
 import Modifiers
 import SwiftUI
 import TransfersFeature
@@ -66,14 +67,14 @@ public struct AddEntryView: View {
 
                 form
             }
-            .navigationTitle("Add")
+            .navigationTitle(mode == .transfer ? "Add transfer" : "Add payment")
             .navigationBarTitleDisplayModeInlineCompat()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: dismiss.callAsFunction)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", action: save)
+                    Button("Add", action: save)
                         .buttonStyle(.glassProminent)
                         .disabled(!canSave)
                 }

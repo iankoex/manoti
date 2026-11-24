@@ -37,6 +37,8 @@ final class AppRoot {
         let reconciliationService: ReconciliationService
         let iCloudStatusService: ICloudStatusService
         let maintenanceService: AppMaintenance
+        /// Set once when an app update advanced the bundled message rules.
+        let rulesUpdateNotice: SharedRulesUpdate?
     }
 
     private static let logger = Logger(subsystem: "com.iankoex.manoti", category: "AppRoot")
@@ -61,12 +63,27 @@ final class AppRoot {
             Self.logger.error("Seeding failed: \(error.localizedDescription, privacy: .public)")
         }
 
+        // Rule fixes ship with the app; apply them without waiting for a manual update.
+        var rulesUpdateNotice: SharedRulesUpdate?
+
+        do {
+            if let update = try SharedRulesService(context: context).installBundledRulesIfNeeded(),
+                update.shouldNotify
+            {
+                rulesUpdateNotice = update
+            }
+        } catch {
+            Self.logger.error(
+                "Shared rules could not be installed: \(error.localizedDescription, privacy: .public)"
+            )
+        }
+
         appService.reload()
 
         // Replay anything a Shortcut parked while the app was unavailable.
         let maintenanceService = AppMaintenance(context: context)
         _ = maintenanceService.drainAtLaunch()
-        AppBackgroundScheduler.register(context: context)
+        AppBackgroundScheduler.register(container: container)
         Task { await AppBackgroundScheduler.schedule() }
 
         let investmentService = InvestmentService(context: context)
@@ -105,7 +122,8 @@ final class AppRoot {
             savingsService: SavingsService(context: context),
             reconciliationService: ReconciliationService(context: context),
             iCloudStatusService: ICloudStatusService(),
-            maintenanceService: maintenanceService
+            maintenanceService: maintenanceService,
+            rulesUpdateNotice: rulesUpdateNotice
         )
         failureMessage = nil
     }
