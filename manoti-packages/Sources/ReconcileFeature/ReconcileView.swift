@@ -466,7 +466,7 @@ public struct ReconcileView: View {
         let payee = entry.payee.trimmingCharacters(in: .whitespacesAndNewlines)
         if !payee.isEmpty {
             parts.append(payee)
-        } else if let category = entry.category {
+        } else if let category = entry.primaryCategory {
             parts.append(category.name)
         } else {
             parts.append(entry.kind.displayName)

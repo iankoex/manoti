@@ -16,6 +16,7 @@ struct AccountEditorView: View {
 
     @State private var name: String
     @State private var kind: AccountKind
+    @State private var ownership: AccountOwnership
     @State private var currencyCode: String
     @State private var colorHex: String
     @State private var symbolName: String
@@ -27,6 +28,7 @@ struct AccountEditorView: View {
         self.account = account
         _name = State(initialValue: account?.name ?? "")
         _kind = State(initialValue: account?.kind ?? .bank)
+        _ownership = State(initialValue: account?.ownership ?? .personal)
         _currencyCode = State(initialValue: account?.currencyCode ?? CurrencyCatalog.defaultCurrency.code)
         _colorHex = State(initialValue: account?.colorHex ?? ManotiPalette.accountColours[0])
         _symbolName = State(initialValue: account?.symbolName ?? ManotiPalette.accountSymbols[0])
@@ -70,6 +72,12 @@ struct AccountEditorView: View {
             Picker("Type", selection: $kind) {
                 ForEach(AccountKind.allCases) { kind in
                     Text(kind.displayName).tag(kind)
+                }
+            }
+
+            Picker("Owner", selection: $ownership) {
+                ForEach(AccountOwnership.allCases) { ownership in
+                    Text(ownership.displayName).tag(ownership)
                 }
             }
 
@@ -121,7 +129,8 @@ struct AccountEditorView: View {
                     kind: kind,
                     colorHex: colorHex,
                     symbolName: symbolName,
-                    institution: institution
+                    institution: institution,
+                    ownership: ownership
                 )
             } else {
                 let currency = CurrencyCatalog.currency(for: currencyCode)
@@ -137,6 +146,7 @@ struct AccountEditorView: View {
                     currencyCode: currencyCode,
                     colorHex: colorHex,
                     symbolName: symbolName,
+                    ownership: ownership,
                     openingBalanceMinor: opening
                 )
             }

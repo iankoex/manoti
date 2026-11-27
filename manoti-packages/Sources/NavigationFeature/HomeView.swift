@@ -13,6 +13,7 @@ import LoansFeature
 import Modifiers
 import SettingsFeature
 import SwiftUI
+import TagsFeature
 
 public struct HomeView: View {
     private let onAdd: () -> Void
@@ -23,11 +24,13 @@ public struct HomeView: View {
     @Environment(LedgerService.self) private var ledgerService
     @Environment(LoanService.self) private var loanService
     @Environment(InsightsService.self) private var insights
+    @Environment(TagService.self) private var tagService
 
     @State private var accounts: [Account] = []
     @State private var recent: [LedgerEntry] = []
-    @State private var netWorth: NetWorth?
     @State private var loanSummary: LoanSummary?
+    @State private var tags: [Tag] = []
+    @State private var tagSummaries: [UUID: TagSummary] = [:]
     @State private var weekTotal: PeriodTotal?
     @State private var monthTotal: PeriodTotal?
     @State private var dailySpend: [DailySpend] = []
@@ -41,9 +44,9 @@ public struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: ManotiSpacing.large) {
-                    NetWorthCard(netWorth: netWorth)
-
                     AccountsSection(accounts: activeAccounts, revision: accountsRevision)
+
+                    TagsCard(tags: tags, summaries: tagSummaries)
 
                     LoansCard(summary: loanSummary)
 
@@ -100,12 +103,31 @@ public struct HomeView: View {
     private func reload() {
         accounts = (try? accountService.fetchAccounts()) ?? []
         recent = (try? ledgerService.recent(limit: 6)) ?? []
+
+        let openTags = (try? tagService.fetchTags()) ?? []
+        tags = openTags
+            .map { tag in
+                (tag, tag.lines?.compactMap { $0.entry?.occurredAt }.max() ?? .distantPast)
+            }
+            .sorted { $0.1 > $1.1 }
+            .prefix(3)
+            .map(\.0)
+        var summaries: [UUID: TagSummary] = [:]
+
+        if !tags.isEmpty {
+            let currency = appService.displayCurrency
+
+            for tag in tags {
+                summaries[tag.id] = try? tagService.summary(for: tag, displayCurrency: currency)
+            }
+        }
+
+        tagSummaries = summaries
         accountsRevision += 1
 
         let currency = appService.displayCurrency
 
         do {
-            netWorth = try insights.netWorth(accounts: activeAccounts, displayCurrency: currency)
             loanSummary = try loanService.summary(displayCurrency: currency)
             dailySpend = try insights.dailySpend(days: 7, displayCurrency: currency)
 
@@ -130,44 +152,11 @@ public struct HomeView: View {
                 )
             }
         } catch {
-            netWorth = nil
             loanSummary = nil
             weekTotal = nil
             monthTotal = nil
             dailySpend = []
         }
-    }
-}
-
-private struct NetWorthCard: View {
-    let netWorth: NetWorth?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Net worth")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            if let netWorth {
-                AmountText(netWorth.amount, style: .system(size: 40, weight: .semibold, design: .rounded))
-
-                if !netWorth.missingRates.isEmpty {
-                    Label(
-                        "No rate for \(netWorth.missingRates.joined(separator: ", ")) — shown 1:1",
-                        systemImage: "exclamationmark.triangle"
-                    )
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
-                }
-            } else {
-                Text("—")
-                    .font(.system(size: 40, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(ManotiSpacing.regular)
-        .background(.thinMaterial, in: .rect(cornerRadius: 20))
     }
 }
 
@@ -226,6 +215,69 @@ private struct AccountsSection: View {
         }
         .padding(ManotiSpacing.regular)
         .background(.quaternary.opacity(0.25), in: .rect(cornerRadius: 16))
+    }
+}
+
+private struct TagsCard: View {
+    let tags: [Tag]
+    let summaries: [UUID: TagSummary]
+
+    var body: some View {
+        if !tags.isEmpty {
+            VStack(alignment: .leading, spacing: ManotiSpacing.small) {
+                NavigationLink {
+                    TagsView()
+                        .navigationTitle("Tags")
+                } label: {
+                    HStack {
+                        Text("Tags")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        Spacer()
+
+                        HStack(spacing: 3) {
+                            Text("See all")
+                                .font(.caption.weight(.medium))
+
+                            Image(systemName: "chevron.right")
+                                .font(.caption2.weight(.semibold))
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+
+                ForEach(tags) { tag in
+                    NavigationLink {
+                        TagDetailView(tag: tag)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: tag.symbolName)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(ManotiColor.forHex(tag.colorHex))
+                                .frame(width: 24, height: 24)
+                                .background(ManotiColor.forHex(tag.colorHex).opacity(0.12), in: .circle)
+
+                            Text(tag.name)
+                                .font(.subheadline)
+                                .lineLimit(1)
+
+                            Spacer(minLength: 8)
+
+                            if let summary = summaries[tag.id] {
+                                AmountText(summary.balance, style: .subheadline.weight(.medium))
+                            }
+                        }
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(ManotiSpacing.regular)
+            .background(.quaternary.opacity(0.25), in: .rect(cornerRadius: 16))
+        }
     }
 }
 

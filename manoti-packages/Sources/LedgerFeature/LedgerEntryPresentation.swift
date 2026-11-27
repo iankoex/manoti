@@ -24,7 +24,7 @@ enum LedgerEntryPresentation {
             return entry.payee
         }
 
-        if let category = entry.category {
+        if let category = entry.primaryCategory {
             return category.name
         }
 
@@ -32,11 +32,11 @@ enum LedgerEntryPresentation {
     }
 
     static func symbolName(for entry: LedgerEntry) -> String {
-        entry.category?.symbolName ?? entry.kind.symbolName
+        entry.primaryCategory?.symbolName ?? entry.kind.symbolName
     }
 
     static func tint(for entry: LedgerEntry) -> Color {
-        ManotiColor.forHex(entry.category?.colorHex ?? "#8E8E93")
+        ManotiColor.forHex(entry.primaryCategory?.colorHex ?? "#8E8E93")
     }
 
     static func sourceName(for source: LedgerEntrySource) -> String {

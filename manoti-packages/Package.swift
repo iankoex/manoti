@@ -39,6 +39,7 @@ let package = Package(
         .library(name: "LoansFeature", targets: ["LoansFeature"]),
         .library(name: "InvestmentsFeature", targets: ["InvestmentsFeature"]),
         .library(name: "InsightsFeature", targets: ["InsightsFeature"]),
+        .library(name: "TagsFeature", targets: ["TagsFeature"]),
     ],
     targets: [
         .target(
@@ -77,6 +78,7 @@ let package = Package(
                 "SettingsFeature",
                 "LoansFeature",
                 "InsightsFeature",
+                "TagsFeature",
                 "AppPackageExtensions",
             ],
             swiftSettings: swiftSettings
@@ -151,8 +153,13 @@ let package = Package(
             name: "SettingsFeature",
             dependencies: [
                 "AppModels", "AppServices", "Modifiers", "AppPackageExtensions", "RulesFeature",
-                "ReconcileFeature",
+                "ReconcileFeature", "TagsFeature",
             ],
+            swiftSettings: swiftSettings
+        ),
+        .target(
+            name: "TagsFeature",
+            dependencies: ["AppModels", "AppServices", "Modifiers", "LedgerFeature", "AppPackageExtensions"],
             swiftSettings: swiftSettings
         ),
         .target(

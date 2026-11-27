@@ -118,6 +118,7 @@ public struct LogExpenseIntent: AppIntent {
                     kind: .expense,
                     amountMinor: spoken.money.minorUnits,
                     account: account,
+                    lines: [LedgerLineInput(amountMinor: spoken.money.minorUnits)],
                     payee: payee,
                     note: ""
                 )

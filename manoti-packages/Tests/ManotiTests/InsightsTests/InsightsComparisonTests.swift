@@ -80,7 +80,7 @@ struct InsightsComparisonTests {
             currencyCode: currencyCode,
             occurredAt: occurredAt
         )
-        entry.category = category
+        entry.attachSingleLine(category: category, in: context)
         entry.payee = payee
         entry.status = status
         entry.isSoftDeleted = isSoftDeleted
@@ -118,7 +118,6 @@ struct InsightsComparisonTests {
     func monthDaySeven() throws {
         let (service, context) = try makeService()
         let current = try makeDate(day: 7, month: 11)
-        let previous = try makeDate(day: 7, month: 10)
 
         addEntry(100_000, at: try makeDate(day: 1, month: 11), in: context)
         addEntry(50_000, at: try makeDate(day: 7, month: 11, hour: 10), in: context)

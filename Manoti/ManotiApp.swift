@@ -26,6 +26,7 @@ struct ManotiApp: App {
                     .environment(dependencies.notificationService)
                     .environment(dependencies.accountService)
                     .environment(dependencies.categoryService)
+                    .environment(dependencies.tagService)
                     .environment(dependencies.ledgerService)
                     .environment(dependencies.transferService)
                     .environment(dependencies.loanService)

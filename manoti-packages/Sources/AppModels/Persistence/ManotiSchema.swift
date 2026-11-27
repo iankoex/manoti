@@ -35,5 +35,7 @@ public enum ManotiSchema {
         ReconcileSession.self,
         ReconcileMessage.self,
         UnparsedMessage.self,
+        LedgerEntryLine.self,
+        Tag.self,
     ]
 }

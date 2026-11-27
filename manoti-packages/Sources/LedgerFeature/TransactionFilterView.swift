@@ -11,6 +11,7 @@ struct TransactionFilterView: View {
     @Binding var filter: TransactionFilter
     let currency: Currency
     let accounts: [Account]
+    let tags: [AppModels.Tag]
 
     @Environment(\.dismiss) private var dismiss
 
@@ -60,6 +61,27 @@ struct TransactionFilterView: View {
                     Text("Accounts")
                 } footer: {
                     Text("All accounts are on. Turn one off to leave it out; turning its type off disables it.")
+                }
+
+                if !tags.isEmpty {
+                    Section("Tags") {
+                        ForEach(tags) { tag in
+                            Toggle(isOn: tagBinding(tag)) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: tag.symbolName)
+                                        .font(.caption)
+                                        .foregroundStyle(ManotiColor.forHex(tag.colorHex))
+                                        .frame(width: 24, height: 24)
+                                        .background(
+                                            ManotiColor.forHex(tag.colorHex).opacity(0.14),
+                                            in: .circle
+                                        )
+
+                                    Text(tag.name)
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Section("Amount in \(currency.code)") {
@@ -140,6 +162,20 @@ struct TransactionFilterView: View {
 
     private var allAccountIDs: Set<UUID> {
         Set(accounts.map(\.id))
+    }
+
+    /// Selected tags narrow the ledger; an empty set shows everything.
+    private func tagBinding(_ tag: AppModels.Tag) -> Binding<Bool> {
+        Binding(
+            get: { filter.tagIDs.contains(tag.id) },
+            set: { isOn in
+                if isOn {
+                    filter.tagIDs.insert(tag.id)
+                } else {
+                    filter.tagIDs.remove(tag.id)
+                }
+            }
+        )
     }
 
     private func isAccountOn(_ account: Account) -> Bool {

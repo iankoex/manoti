@@ -53,24 +53,6 @@ struct EntryFormStateTests {
         #expect(state.selectedCategory == nil)
     }
 
-    @Test("The keypad can edit the fee without touching the amount")
-    func feeKeypad() throws {
-        let (state, _, _) = try makeState()
-
-        state.activeField = .fee
-        for key in ["1", "2", ".", "5"] {
-            state.press(key)
-        }
-
-        #expect(state.feeText == "12.5")
-        #expect(state.amountText.isEmpty)
-
-        state.activeField = .amount
-        state.press("9")
-        #expect(state.amountText == "9")
-        #expect(state.feeText == "12.5")
-    }
-
     @Test("Saving never attaches a category from the other kind")
     func saveDropsMismatchedCategory() throws {
         let (state, accounts, context) = try makeState()
@@ -85,7 +67,7 @@ struct EntryFormStateTests {
 
         let entry = try state.save(ledger: LedgerService(context: context))
 
-        #expect(entry.category == nil)
+        #expect(entry.primaryCategory == nil)
         #expect(entry.kind == .income)
     }
 }

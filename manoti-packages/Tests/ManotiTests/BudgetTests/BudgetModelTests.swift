@@ -46,7 +46,7 @@ struct BudgetModelTests {
 
     @Test("The schema stores every budget model")
     func schemaContainsBudgetModels() {
-        #expect(ManotiSchema.models.count == 27)
+        #expect(ManotiSchema.models.count == 29)
         #expect(ManotiSchema.models.contains { $0 == BudgetPeriod.self })
         #expect(ManotiSchema.models.contains { $0 == Envelope.self })
         #expect(ManotiSchema.models.contains { $0 == SinkingFund.self })

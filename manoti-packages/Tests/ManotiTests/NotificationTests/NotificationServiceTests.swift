@@ -264,7 +264,7 @@ struct NotificationServiceTests {
             payee: "Lunch",
             source: .manual
         )
-        entry.category = category
+        entry.attachSingleLine(category: category, in: context)
         entry.status = .confirmed
         context.insert(entry)
         try context.save()

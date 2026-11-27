@@ -85,6 +85,10 @@ nonisolated public final class IngestService: Loggable {
             )
         }
 
+        if message.role == .confirmation {
+            return try ingestConfirmation(message, hash: hash, sender: sender, text: text)
+        }
+
         let routed = routeAccount(for: message)
         // Never attach a message to an account in another currency: the minor units mean a
         // different amount. The row waits in review until the user picks a matching account.
@@ -94,17 +98,68 @@ nonisolated public final class IngestService: Loggable {
                     ? candidate : nil
             }
 
+        let effectiveSender = message.sender.isEmpty ? (sender ?? "") : message.sender
+
+        // The reference identifies the movement. Match before creating anything so a
+        // receipt waiting for its payment is upgraded instead of duplicated.
+        let match = try MovementCorrelator(context: context).match(for: message)
+
+        if case .entry(let existing) = match {
+            if existing.isConfirmationOnly {
+                return try upgrade(
+                    existing,
+                    with: message,
+                    account: account,
+                    hash: hash,
+                    sender: effectiveSender
+                )
+            }
+
+            return try absorb(existing, with: message, hash: hash, sender: effectiveSender)
+        }
+
+        // A message whose counterpart already belongs to a transfer is the other side of a
+        // transfer the user created (or confirmed) earlier. Attach it to that leg instead of
+        // creating a second one.
+        if case .counterpart(let leg) = match, let transfer = leg.transfer {
+            let opposite = leg.kind == .transferOut ? transfer.inTransaction : transfer.outTransaction
+
+            if let opposite {
+                return try absorbIntoExistingTransfer(
+                    opposite,
+                    with: message,
+                    hash: hash,
+                    sender: effectiveSender
+                )
+            }
+        }
+
+        var counterpartLeg: LedgerEntry?
+        if case .counterpart(let leg) = match {
+            guard !leg.isSoftDeleted, leg.status != .ignored else {
+                return duplicateOutcome(leg, message: message)
+            }
+
+            counterpartLeg = leg
+        }
+
         // The same bank reference on the same account is the same money, even when the
-        // wording around it changed enough to defeat the text hash.
-        if let existing = try existingEntry(account: account, externalRef: message.reference) {
+        // wording around it changed enough to defeat the text hash. This stays as a
+        // fallback for references outside the correlation window.
+        if let existing = try existingEntry(account: account, externalRef: message.reference),
+            MovementRules.amountsAgree(
+                minor: message.amountMinor,
+                feeMinor: message.feeMinor,
+                otherMinor: existing.amountMinor,
+                otherFeeMinor: existing.feeMinor
+            )
+        {
             return IngestOutcome(
                 status: .duplicate,
                 entryID: existing.id,
                 summary: "Already recorded: \(message.payee.isEmpty ? message.ruleName : message.payee)."
             )
         }
-
-        let effectiveSender = message.sender.isEmpty ? (sender ?? "") : message.sender
         let fingerprint = TemplateFingerprint.make(sender: effectiveSender, text: text)
 
         // A shape the user has already told us is not a transaction never needs Review.
@@ -143,9 +198,9 @@ nonisolated public final class IngestService: Loggable {
             source: .message
         )
         entry.account = account
-        entry.category = suppression == nil ? autoCategory : nil
         entry.externalRef = message.reference
         entry.counterpartRef = message.counterpartReference
+        entry.ingestPayee = message.payee
         entry.rawMessage = keepsRawMessages() ? message.rawText : ""
         entry.messageSender = effectiveSender
         entry.ingestFingerprint = fingerprint
@@ -165,14 +220,35 @@ nonisolated public final class IngestService: Loggable {
         }
 
         context.insert(entry)
+
+        if message.messageType == .expense || message.messageType == .income {
+            let line = LedgerEntryLine(
+                amountMinor: message.amountMinor,
+                category: suppression == nil ? autoCategory : nil
+            )
+            context.insert(line)
+            line.entry = entry
+            entry.lines = [line]
+        }
+
         try context.save()
+
+        if message.messageType.isTransferLeg {
+            _ = try reconcileTransfer(
+                entry: entry,
+                message: message,
+                counterpart: counterpartLeg
+            )
+        }
+
         ManotiNotifications.postDataChanged()
 
+        let finalStatus = entry.status
         let amount = Money(
             minorUnits: message.amountMinor, currency: CurrencyCatalog.currency(for: message.currencyCode))
         let label = message.payee.isEmpty ? message.ruleName : message.payee
         let summary: String
-        switch status {
+        switch finalStatus {
             case .ignored:
                 summary = "Auto-ignored: \(label)."
             case .confirmed:
@@ -182,10 +258,403 @@ nonisolated public final class IngestService: Loggable {
         }
 
         return IngestOutcome(
-            status: status == .confirmed ? .recorded : (status == .ignored ? .ignored : .needsReview),
+            status: finalStatus == .confirmed
+                ? .recorded : (finalStatus == .ignored ? .ignored : .needsReview),
             entryID: entry.id,
             summary: summary
         )
+    }
+
+    // MARK: - Correlation
+
+    /// A receipt for a movement. It never creates a second row when the movement exists.
+    private func ingestConfirmation(
+        _ message: ParsedMessage,
+        hash: String,
+        sender: String?,
+        text: String
+    ) throws -> IngestOutcome {
+        let effectiveSender = message.sender.isEmpty ? (sender ?? "") : message.sender
+
+        if let existing = try existingConfirmation(reference: message.reference, sender: effectiveSender) {
+            return duplicateOutcome(existing, message: message)
+        }
+
+        if let match = try MovementCorrelator(context: context).match(for: message),
+            case .entry(let existing) = match
+        {
+            guard !existing.isSoftDeleted, existing.status != .ignored else {
+                return duplicateOutcome(existing, message: message)
+            }
+
+            try enrich(existing, with: message, sender: effectiveSender)
+            try context.save()
+            ManotiNotifications.postDataChanged()
+
+            let label = existing.payee.isEmpty ? message.payee : existing.payee
+            return IngestOutcome(
+                status: .duplicate,
+                entryID: existing.id,
+                summary: "Linked to \(label)."
+            )
+        }
+
+        // The receipt arrived first. Record it as a reviewable expense so the payment is
+        // never lost, and let the transaction upgrade it when it arrives.
+        let entry = LedgerEntry(
+            kind: message.messageType == .income ? .income : .expense,
+            amountMinor: message.amountMinor,
+            feeMinor: 0,
+            currencyCode: message.currencyCode,
+            occurredAt: message.occurredAt,
+            payee: message.payee,
+            note: "",
+            source: .message
+        )
+        entry.ingestPayee = message.payee
+        entry.confirmationRef = message.reference
+        entry.confirmationSender = effectiveSender
+        entry.confirmedAt = message.occurredAt
+        entry.confirmationText = keepsRawMessages() ? text : ""
+        entry.isConfirmationOnly = true
+        entry.messageSender = effectiveSender
+        entry.dedupeHash = hash
+        entry.confidence = message.confidence
+        entry.status = .needsReview
+        context.insert(entry)
+
+        if entry.kind == .expense || entry.kind == .income {
+            let line = LedgerEntryLine(amountMinor: message.amountMinor)
+            context.insert(line)
+            line.entry = entry
+            entry.lines = [line]
+        }
+
+        try context.save()
+        ManotiNotifications.postDataChanged()
+
+        let amount = Money(
+            minorUnits: message.amountMinor,
+            currency: CurrencyCatalog.currency(for: message.currencyCode)
+        )
+        let label = message.payee.isEmpty ? message.ruleName : message.payee
+        return IngestOutcome(
+            status: .needsReview,
+            entryID: entry.id,
+            summary: "Needs review: \(amount.formatted()) \(label) (bank receipt)."
+        )
+    }
+
+    /// Adds what a receipt knows without touching what the user chose.
+    private func enrich(_ entry: LedgerEntry, with message: ParsedMessage, sender: String) throws {
+        guard !entry.isSoftDeleted, entry.status != .ignored else {
+            return
+        }
+
+        if entry.channelName.isEmpty {
+            let biller = entry.ingestPayee.isEmpty ? entry.payee : entry.ingestPayee
+            if !biller.isEmpty {
+                entry.channelName = biller
+            }
+        }
+
+        if entry.payeeIsUnedited, !message.payee.isEmpty {
+            entry.payee = message.payee
+        }
+
+        if entry.feeMinor == 0 {
+            entry.feeMinor = message.feeMinor
+        }
+
+        if entry.balanceAfterMinor == nil {
+            entry.balanceAfterMinor = message.balanceAfterMinor
+        }
+
+        if entry.externalRef.isEmpty {
+            entry.externalRef = message.reference
+        }
+
+        if entry.counterpartRef.isEmpty {
+            entry.counterpartRef = message.counterpartReference
+        }
+
+        if entry.confirmationRef.isEmpty {
+            entry.confirmationRef = message.reference
+        }
+
+        entry.confirmationSender = sender
+
+        if entry.confirmedAt == nil {
+            entry.confirmedAt = message.occurredAt
+        }
+
+        if entry.confirmationText.isEmpty, keepsRawMessages() {
+            entry.confirmationText = message.rawText
+        }
+    }
+
+    /// A transaction matching a receipt-first entry. The merchant payee is kept.
+    private func upgrade(
+        _ entry: LedgerEntry,
+        with message: ParsedMessage,
+        account: Account?,
+        hash: String,
+        sender: String
+    ) throws -> IngestOutcome {
+        guard !entry.isSoftDeleted, entry.status != .ignored else {
+            return duplicateOutcome(entry, message: message)
+        }
+
+        if entry.status == .needsReview {
+            if entry.account == nil, let account {
+                entry.account = account
+            }
+
+            entry.occurredAt = message.occurredAt
+        }
+
+        if entry.feeMinor == 0 {
+            entry.feeMinor = message.feeMinor
+        }
+
+        if entry.balanceAfterMinor == nil {
+            entry.balanceAfterMinor = message.balanceAfterMinor
+        }
+
+        if entry.externalRef.isEmpty {
+            entry.externalRef = message.reference
+        }
+
+        if entry.counterpartRef.isEmpty {
+            entry.counterpartRef = message.counterpartReference
+        }
+
+        if entry.channelName.isEmpty, !message.payee.isEmpty {
+            entry.channelName = message.payee
+        }
+
+        // The transaction's payee is the biller, not the merchant. Recording it as the
+        // ingested payee keeps `payeeIsUnedited` false, so a later receipt cannot replace
+        // the merchant name.
+        entry.ingestPayee = message.payee
+        entry.dedupeHash = hash
+
+        if entry.messageSender.isEmpty {
+            entry.messageSender = sender
+        }
+
+        if entry.rawMessage.isEmpty, keepsRawMessages() {
+            entry.rawMessage = message.rawText
+        }
+
+        entry.isConfirmationOnly = false
+
+        try context.save()
+        ManotiNotifications.postDataChanged()
+
+        let amount = Money(minorUnits: entry.amountMinor, currency: entry.currency)
+        let label = entry.payee.isEmpty ? message.ruleName : entry.payee
+        return IngestOutcome(
+            status: entry.status == .confirmed ? .recorded : .needsReview,
+            entryID: entry.id,
+            summary: entry.status == .confirmed
+                ? "Recorded: \(amount.formatted()) \(label)"
+                : "Needs review: \(amount.formatted()) \(label)"
+        )
+    }
+
+    /// A second message for an entry that is already complete. Fill only gaps.
+    private func absorb(
+        _ entry: LedgerEntry,
+        with message: ParsedMessage,
+        hash: String,
+        sender: String
+    ) throws -> IngestOutcome {
+        guard !entry.isSoftDeleted, entry.status != .ignored else {
+            return duplicateOutcome(entry, message: message)
+        }
+
+        if entry.feeMinor == 0 {
+            entry.feeMinor = message.feeMinor
+        }
+
+        if entry.balanceAfterMinor == nil {
+            entry.balanceAfterMinor = message.balanceAfterMinor
+        }
+
+        if entry.externalRef.isEmpty {
+            entry.externalRef = message.reference
+        }
+
+        if entry.counterpartRef.isEmpty {
+            entry.counterpartRef = message.counterpartReference
+        }
+
+        if entry.dedupeHash.isEmpty {
+            entry.dedupeHash = hash
+        }
+
+        if entry.rawMessage.isEmpty, keepsRawMessages() {
+            entry.rawMessage = message.rawText
+        }
+
+        if entry.messageSender.isEmpty {
+            entry.messageSender = sender
+        }
+
+        try context.save()
+        ManotiNotifications.postDataChanged()
+        return duplicateOutcome(entry, message: message)
+    }
+
+    /// The other side of a transfer that already exists. Fill its references and evidence;
+    /// never change its amount, account or date.
+    private func absorbIntoExistingTransfer(
+        _ entry: LedgerEntry,
+        with message: ParsedMessage,
+        hash: String,
+        sender: String
+    ) throws -> IngestOutcome {
+        guard !entry.isSoftDeleted, entry.status != .ignored else {
+            return duplicateOutcome(entry, message: message)
+        }
+
+        if entry.externalRef.isEmpty {
+            entry.externalRef = message.reference
+        }
+
+        if entry.counterpartRef.isEmpty {
+            entry.counterpartRef = message.counterpartReference
+        }
+
+        if entry.dedupeHash.isEmpty {
+            entry.dedupeHash = hash
+        }
+
+        if entry.rawMessage.isEmpty, keepsRawMessages() {
+            entry.rawMessage = message.rawText
+        }
+
+        if entry.messageSender.isEmpty {
+            entry.messageSender = sender
+        }
+
+        if entry.balanceAfterMinor == nil {
+            entry.balanceAfterMinor = message.balanceAfterMinor
+        }
+
+        if entry.payee.isEmpty, !message.payee.isEmpty {
+            entry.payee = message.payee
+        }
+
+        if entry.kind == .transferOut, entry.feeMinor == 0 {
+            entry.feeMinor = message.feeMinor
+        }
+
+        entry.status = .confirmed
+        try context.save()
+        ManotiNotifications.postDataChanged()
+
+        return IngestOutcome(
+            status: .duplicate,
+            entryID: entry.id,
+            summary: "Already part of a transfer."
+        )
+    }
+
+    private func duplicateOutcome(_ entry: LedgerEntry, message: ParsedMessage) -> IngestOutcome {
+        let label =
+            entry.payee.isEmpty
+            ? (message.payee.isEmpty ? message.ruleName : message.payee)
+            : entry.payee
+        return IngestOutcome(
+            status: .duplicate,
+            entryID: entry.id,
+            summary: "Already recorded: \(label)."
+        )
+    }
+
+    /// Links a transfer leg to its opposite, or builds the M-PESA leg when the bank message
+    /// names a wallet the user owns.
+    private func reconcileTransfer(
+        entry: LedgerEntry,
+        message: ParsedMessage,
+        counterpart: LedgerEntry?
+    ) throws -> Bool {
+        guard entry.kind.isTransferLeg else {
+            return false
+        }
+
+        if let counterpart {
+            return try link(entry, with: counterpart)
+        }
+
+        guard entry.kind == .transferOut,
+            entry.transfer == nil,
+            let from = entry.account,
+            !message.accountHint.isEmpty,
+            !message.counterpartReference.isEmpty,
+            let to = accountService.account(forIdentifier: message.accountHint),
+            to.id != from.id,
+            to.kind == .mobileMoney,
+            to.currencyCode == entry.currencyCode
+        else {
+            return false
+        }
+
+        let inLeg = LedgerEntry(
+            kind: .transferIn,
+            amountMinor: entry.amountMinor,
+            currencyCode: entry.currencyCode,
+            occurredAt: entry.occurredAt,
+            note: "",
+            source: .message
+        )
+        inLeg.account = to
+        inLeg.externalRef = message.counterpartReference
+        inLeg.counterpartRef = message.reference
+        context.insert(inLeg)
+
+        let linked = try link(entry, with: inLeg)
+        if !linked {
+            context.delete(inLeg)
+        }
+
+        return linked
+    }
+
+    private func link(_ entry: LedgerEntry, with other: LedgerEntry) throws -> Bool {
+        let outLeg = entry.kind == .transferOut ? entry : other
+        let inLeg = entry.kind == .transferIn ? entry : other
+
+        guard outLeg.kind == .transferOut,
+            inLeg.kind == .transferIn,
+            outLeg.transfer == nil,
+            inLeg.transfer == nil,
+            !outLeg.isSoftDeleted,
+            !inLeg.isSoftDeleted,
+            outLeg.status != .ignored,
+            inLeg.status != .ignored,
+            let from = outLeg.account,
+            let to = inLeg.account,
+            from.id != to.id
+        else {
+            return false
+        }
+
+        let previousOut = outLeg.status
+        let previousIn = inLeg.status
+        outLeg.status = .confirmed
+        inLeg.status = .confirmed
+
+        do {
+            _ = try TransferLinker(context: context).link(outLeg: outLeg, inLeg: inLeg)
+            return true
+        } catch {
+            outLeg.status = previousOut
+            inLeg.status = previousIn
+            return false
+        }
     }
 
     /// Stable identity for a raw message, so a repeated automation never double-books it.
@@ -231,6 +700,21 @@ nonisolated public final class IngestService: Loggable {
         )
         descriptor.fetchLimit = 1
         return try context.fetch(descriptor).first
+    }
+
+    private func existingConfirmation(reference: String, sender: String) throws -> LedgerEntry? {
+        guard !reference.isEmpty else {
+            return nil
+        }
+
+        let ref = reference
+        var descriptor = FetchDescriptor<LedgerEntry>(
+            predicate: #Predicate<LedgerEntry> { $0.confirmationRef == ref }
+        )
+        descriptor.fetchLimit = 20
+        return try context.fetch(descriptor).first {
+            sender.isEmpty || $0.confirmationSender == sender
+        }
     }
 
     private func existingEntry(account: Account?, externalRef: String) throws -> LedgerEntry? {

@@ -11,7 +11,6 @@ import WidgetKit
 /// dependency, so it reads only this small JSON file from the shared app group.
 private struct WidgetSnapshot: Decodable {
     let updatedAt: Date
-    let netWorthText: String
     let monthSpendText: String
     let safeToSpendText: String
     let isPrivacyModeEnabled: Bool
@@ -53,7 +52,6 @@ private struct ManotiEntry: TimelineEntry {
         date: .now,
         snapshot: WidgetSnapshot(
             updatedAt: .now,
-            netWorthText: "KES 12,480.00",
             monthSpendText: "KES 2,130.00",
             safeToSpendText: "KES 1,305.55",
             isPrivacyModeEnabled: false
@@ -120,11 +118,11 @@ private struct ManotiWidgetView: View {
 
             Spacer(minLength: 0)
 
-            Text("Net worth")
+            Text("This month")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.white.opacity(0.65))
 
-            Text(snapshot.netWorthText)
+            Text(snapshot.monthSpendText)
                 .font(.system(size: 22, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white)
                 .minimumScaleFactor(0.6)
@@ -144,10 +142,7 @@ private struct ManotiWidgetView: View {
             header(snapshot)
 
             HStack(alignment: .top, spacing: 14) {
-                metric("Net worth", snapshot.netWorthText, size: 21)
-                Divider()
-                    .overlay(.white.opacity(0.2))
-                metric("This month", snapshot.monthSpendText, size: 17)
+                metric("This month", snapshot.monthSpendText, size: 21)
                 Divider()
                     .overlay(.white.opacity(0.2))
                 metric("Safe to spend", snapshot.safeToSpendText, size: 17)

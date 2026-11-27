@@ -17,6 +17,7 @@ struct EntryFormStateEditTests {
     private struct Fixtures {
         let accounts: AccountService
         let ledger: LedgerService
+        let transfers: TransferService
         let context: ModelContext
     }
 
@@ -26,6 +27,7 @@ struct EntryFormStateEditTests {
         return Fixtures(
             accounts: AccountService(context: context),
             ledger: LedgerService(context: context),
+            transfers: TransferService(context: context),
             context: context
         )
     }
@@ -137,17 +139,6 @@ struct EntryFormStateEditTests {
 
         #expect(state.selectedAccountID == account.id)
         #expect(state.canSave)
-    }
-
-    @Test("The first keypad press replaces a prefilled amount")
-    func prefilledAmountIsReplaced() throws {
-        let fixtures = try makeFixtures()
-        let account = try fixtures.accounts.create(name: "M-Pesa", kind: .mobileMoney)
-        let entry = try fixtures.ledger.record(kind: .expense, amountMinor: 150_000, account: account)
-        let state = EntryFormState(purpose: .edit, entry: entry, accounts: [account])
-
-        state.press("7")
-        #expect(state.amountText == "7")
     }
 
     @Test("Amounts parse through MoneyParser in the selected account's currency")
@@ -307,7 +298,7 @@ struct EntryFormStateEditTests {
         #expect(entry.feeMinor == 1_000)
         #expect(entry.account?.id == replacement.id)
         #expect(entry.currencyCode == "KES")
-        #expect(entry.category == nil)
+        #expect(entry.primaryCategory == nil)
         #expect(entry.payee == "New payee")
         #expect(entry.note == "New note")
         #expect(entry.occurredAt == occurredAt)
@@ -321,12 +312,10 @@ struct EntryFormStateEditTests {
         let income = makeCategory("Salary", sortIndex: 1, in: fixtures.context)
         income.kind = .income
 
-        let entry = try fixtures.ledger.record(
-            kind: .expense,
-            amountMinor: 10_000,
-            account: account,
-            category: income
-        )
+        let entry = LedgerEntry(kind: .expense, amountMinor: 10_000)
+        entry.account = account
+        fixtures.context.insert(entry)
+        entry.attachSingleLine(category: income, in: fixtures.context)
 
         let state = EntryFormState(
             purpose: .edit,
@@ -403,10 +392,11 @@ struct EntryFormStateEditTests {
         #expect(state.parsedAmount?.minorUnits == -12_550)
     }
 
-    @Test("A transfer entry hides the category and keeps the one it already has")
-    func transferKeepsCategory() throws {
+    @Test("A transfer entry hides the category and never carries one")
+    func transferKeepsNoCategory() throws {
         let fixtures = try makeFixtures()
         let account = try fixtures.accounts.create(name: "M-Pesa", kind: .mobileMoney)
+        let destination = try fixtures.accounts.create(name: "Bank", kind: .bank)
         let category = makeCategory("Transfer fee", in: fixtures.context)
 
         let entry = try fixtures.ledger.record(
@@ -420,18 +410,22 @@ struct EntryFormStateEditTests {
         let state = EntryFormState(
             purpose: .review,
             entry: entry,
-            accounts: [account],
+            accounts: [account, destination],
             categories: [category]
         )
 
         #expect(!state.showsCategory)
+        #expect(state.isTransferForm)
         state.amountText = "200"
+        state.counterpartAccountID = destination.id
 
-        let saved = try state.save(ledger: fixtures.ledger)
+        let saved = try state.save(ledger: fixtures.ledger, transfer: fixtures.transfers)
 
         #expect(saved === entry)
         #expect(entry.amountMinor == 20_000)
-        #expect(entry.category?.id == category.id)
+        #expect(entry.primaryCategory == nil)
+        #expect(entry.lines?.isEmpty ?? true)
+        #expect(entry.transfer != nil)
     }
 
     @Test("An archived current category survives a save")
@@ -454,7 +448,7 @@ struct EntryFormStateEditTests {
 
         try state.save(ledger: fixtures.ledger)
 
-        #expect(entry.category?.id == category.id)
+        #expect(entry.primaryCategory?.id == category.id)
     }
 
     @Test("Review accepts a suggestion without touching an existing category")

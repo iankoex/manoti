@@ -62,7 +62,6 @@ struct WidgetSnapshotServiceTests {
         let service = WidgetSnapshotService(context: fixtures.context)
         let shown = try service.makeSnapshot()
 
-        #expect(shown.netWorthText.contains("750"))
         #expect(shown.monthSpendText.contains("250"))
         #expect(shown.safeToSpendText != "—")
         #expect(!shown.isPrivacyModeEnabled)
@@ -70,7 +69,6 @@ struct WidgetSnapshotServiceTests {
         try fixtures.app.setPrivacyModeEnabled(true)
         let hidden = try service.makeSnapshot()
 
-        #expect(hidden.netWorthText == "••••")
         #expect(hidden.monthSpendText == "••••")
         #expect(hidden.safeToSpendText == "••••")
         #expect(hidden.isPrivacyModeEnabled)

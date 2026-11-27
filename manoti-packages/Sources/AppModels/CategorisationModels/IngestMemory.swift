@@ -18,7 +18,7 @@ nonisolated public enum IngestMemoryReason: String, CaseIterable, Codable, Senda
     }
 }
 
-/// What the user taught the app about one message shape.
+/// What the user taught the app about one message pattern.
 ///
 /// One row per sender + template. `reason` decides whether ingest suppresses the
 /// message or surfaces it as a repeat. Nothing here is derived from raw text: only the

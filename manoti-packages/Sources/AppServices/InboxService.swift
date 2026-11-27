@@ -75,6 +75,25 @@ public final class InboxService: Loggable {
         ManotiNotifications.postDataChanged()
     }
 
+    /// Deletes every unreadable message, including ones dismissed earlier. Dismissing only
+    /// hides a row; this removes the stored text too, so the rows do not accumulate forever.
+    @discardableResult
+    public func deleteAllUnparsed() throws -> Int {
+        let messages = try context.fetch(FetchDescriptor<UnparsedMessage>())
+
+        guard !messages.isEmpty else {
+            return 0
+        }
+
+        for message in messages {
+            context.delete(message)
+        }
+
+        try context.save()
+        ManotiNotifications.postDataChanged()
+        return messages.count
+    }
+
     /// The account this merchant was last filed under, so Review can pre-fill it when
     /// routing did not identify one. Never crosses currencies or archived accounts.
     public func suggestedAccount(for entry: LedgerEntry) -> Account? {
@@ -136,6 +155,11 @@ public final class InboxService: Loggable {
         return categories.first { $0.name == name && $0.kind == kind.categoryKind }
     }
 
+    /// The merchant's last manual split, if any, for the review form to offer.
+    public func splitTemplate(for entry: LedgerEntry) throws -> SplitTemplate? {
+        try CategoriserService(context: context).splitTemplate(for: entry.payee)
+    }
+
     public func confirm(
         _ entry: LedgerEntry,
         account: Account?,
@@ -167,8 +191,19 @@ public final class InboxService: Loggable {
 
         do {
             entry.account = account
-            entry.category = category
             entry.status = .confirmed
+
+            if let line = entry.orderedLines.first, entry.orderedLines.count == 1 {
+                // A single-line review still takes the chosen category here. A split entry
+                // was already written by the form's save and must not be flattened.
+                line.category = category
+                line.amountMinor = entry.amountMinor
+            } else if entry.orderedLines.isEmpty, entry.kind == .expense || entry.kind == .income {
+                let line = LedgerEntryLine(amountMinor: entry.amountMinor, category: category)
+                context.insert(line)
+                line.entry = entry
+                entry.lines = [line]
+            }
 
             // Merchant learning happens in `LedgerService.update`, which the review form
             // calls with the edited fields before this confirmation. Learning here would
@@ -204,7 +239,7 @@ public final class InboxService: Loggable {
         ManotiNotifications.postDataChanged()
     }
 
-    /// Rows ingest filed automatically because the user ignored that message shape before.
+    /// Rows ingest filed automatically because the user ignored that message pattern before.
     public func autoIgnored() throws -> [LedgerEntry] {
         try context.fetch(
             FetchDescriptor<LedgerEntry>(
@@ -231,6 +266,37 @@ public final class InboxService: Loggable {
 
         try context.save()
         ManotiNotifications.postDataChanged()
+    }
+
+    /// Removes one auto-ignored row from history. The learned message pattern is kept, so new
+    /// look-alikes stay out of Review. This is a hard delete: ignored rows are audit history,
+    /// not ledger data, and they would otherwise accumulate forever.
+    public func deleteAutoIgnored(_ entry: LedgerEntry) throws {
+        guard !entry.isSoftDeleted, entry.status == .ignored, entry.source == .message else {
+            return
+        }
+
+        context.delete(entry)
+        try context.save()
+        ManotiNotifications.postDataChanged()
+    }
+
+    /// Removes every auto-ignored row, keeping all learned message patterns.
+    @discardableResult
+    public func deleteAllAutoIgnored() throws -> Int {
+        let rows = try autoIgnored()
+
+        guard !rows.isEmpty else {
+            return 0
+        }
+
+        for entry in rows {
+            context.delete(entry)
+        }
+
+        try context.save()
+        ManotiNotifications.postDataChanged()
+        return rows.count
     }
 
     /// A likely repeat of money already in the ledger. Never linked automatically.

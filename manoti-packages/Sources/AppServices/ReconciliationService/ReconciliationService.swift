@@ -679,6 +679,13 @@ public final class ReconciliationService: Loggable {
         entry.dedupeHash = IngestService.dedupeHash(sender: message.sender, text: message.text)
         context.insert(entry)
 
+        if kind == .expense || kind == .income {
+            let line = LedgerEntryLine(amountMinor: message.amountMinor)
+            context.insert(line)
+            line.entry = entry
+            entry.lines = [line]
+        }
+
         message.classification = .imported
         message.matchedEntryID = entry.id
 

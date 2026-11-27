@@ -110,8 +110,15 @@ public final class ExportService: Loggable {
         let date = document.exportedAt.formatted(date: .abbreviated, time: .shortened)
         let entries = document.ledgerEntries.count
         let accounts = document.accounts.count
-        return
+        let tags = document.tags?.count ?? 0
+        var summary =
             "\(date) · \(entries) \(entries == 1 ? "entry" : "entries") · \(accounts) \(accounts == 1 ? "account" : "accounts")"
+
+        if tags > 0 {
+            summary += " · \(tags) \(tags == 1 ? "tag" : "tags")"
+        }
+
+        return summary
     }
 
     private func deleteUserRows() throws {
@@ -123,7 +130,9 @@ public final class ExportService: Loggable {
         try context.delete(model: Goal.self)
         try context.delete(model: InvestmentCashFlow.self)
         try context.delete(model: Investment.self)
+        try context.delete(model: LedgerEntryLine.self)
         try context.delete(model: LedgerEntry.self)
+        try context.delete(model: Tag.self)
         try context.delete(model: Transfer.self)
         try context.delete(model: Loan.self)
         try context.delete(model: MerchantAlias.self)
@@ -154,7 +163,7 @@ public final class ExportService: Loggable {
         // message instead of a generic decode failure.
         if let header = try? JSONDecoder().decode(Header.self, from: data),
             let version = header.schemaVersion,
-            version != BackupDocument.currentSchemaVersion
+            version < 1 || version > BackupDocument.currentSchemaVersion
         {
             throw ExportError.unsupportedVersion(version)
         }
@@ -168,7 +177,7 @@ public final class ExportService: Loggable {
             throw ExportError.decodeFailed
         }
 
-        guard document.schemaVersion == BackupDocument.currentSchemaVersion else {
+        guard (1...BackupDocument.currentSchemaVersion).contains(document.schemaVersion) else {
             throw ExportError.unsupportedVersion(document.schemaVersion)
         }
 
@@ -217,7 +226,7 @@ public final class ExportService: Loggable {
         }
 
         var lines = [
-            "id,date,kind,amount,fee,currency,account,category,payee,note,source,status,externalRef,counterpartRef,transferID,loanID,investmentID,deleted"
+            "id,date,kind,amount,fee,currency,account,category,tags,payee,note,source,status,externalRef,counterpartRef,transferID,loanID,investmentID,deleted"
         ]
 
         for entry in ordered {
@@ -230,7 +239,8 @@ public final class ExportService: Loggable {
                 majorUnitString(minorUnits: entry.feeMinor, exponent: exponent),
                 entry.currencyCode,
                 entry.account?.displayName ?? "",
-                entry.category?.name ?? "",
+                categoryNames(for: entry),
+                tagNames(for: entry),
                 entry.payee,
                 entry.note,
                 entry.sourceRaw,
@@ -243,7 +253,7 @@ public final class ExportService: Loggable {
                 entry.isSoftDeleted ? "true" : "false",
             ]
             // Only free text needs the spreadsheet-formula guard; amounts keep their sign.
-            let textColumns: Set<Int> = [6, 7, 8, 9, 12, 13]
+            let textColumns: Set<Int> = [6, 7, 8, 9, 10, 13, 14]
             let escaped = fields.enumerated().map { index, field in
                 escapeCSV(textColumns.contains(index) ? guardedCSVText(field) : field)
             }
@@ -251,6 +261,45 @@ public final class ExportService: Loggable {
         }
 
         return lines.joined(separator: "\r\n") + "\r\n"
+    }
+
+    /// Restores the single line an older backup carried as one category.
+    private func ensureSingleLine(on entry: LedgerEntry, category: SpendingCategory?) {
+        guard entry.kind == .expense || entry.kind == .income else {
+            return
+        }
+
+        let line: LedgerEntryLine
+
+        if let existing = entry.orderedLines.first {
+            line = existing
+        } else {
+            line = LedgerEntryLine(amountMinor: entry.amountMinor, category: category)
+            context.insert(line)
+            line.entry = entry
+        }
+
+        for extra in entry.orderedLines where extra.id != line.id {
+            context.delete(extra)
+        }
+
+        line.category = category
+        line.amountMinor = entry.amountMinor
+        line.sortIndex = 0
+        entry.lines = [line]
+    }
+
+    private func categoryNames(for entry: LedgerEntry) -> String {
+        var seen: Set<String> = []
+
+        return entry.orderedLines
+            .compactMap { $0.category?.name }
+            .filter { seen.insert($0).inserted }
+            .joined(separator: " | ")
+    }
+
+    private func tagNames(for entry: LedgerEntry) -> String {
+        entry.tagList.map(\.name).joined(separator: " | ")
     }
 
     /// UTF-8 with a BOM, so Excel opens non-ASCII payees correctly.
@@ -292,6 +341,8 @@ public final class ExportService: Loggable {
         let contributions = try context.fetch(FetchDescriptor<SinkingFundContribution>())
         let goals = try context.fetch(FetchDescriptor<Goal>())
         let alerts = try context.fetch(FetchDescriptor<BudgetAlert>())
+        let tags = try context.fetch(FetchDescriptor<Tag>())
+        let lines = try context.fetch(FetchDescriptor<LedgerEntryLine>())
 
         return BackupDocument(
             schemaVersion: BackupDocument.currentSchemaVersion,
@@ -319,7 +370,9 @@ public final class ExportService: Loggable {
             sinkingFunds: sortedByID(funds, id: \.id).map(backup),
             sinkingFundContributions: sortedByID(contributions, id: \.id).map(backup),
             goals: sortedByID(goals, id: \.id).map(backup),
-            budgetAlerts: sortedByID(alerts, id: \.id).map(backup)
+            budgetAlerts: sortedByID(alerts, id: \.id).map(backup),
+            tags: sortedByID(tags, id: \.id).map(backup),
+            lines: sortedByID(lines, id: \.id).map(backup)
         )
     }
 
@@ -387,7 +440,8 @@ public final class ExportService: Loggable {
             isArchived: account.isArchived,
             sortIndex: account.sortIndex,
             createdAt: account.createdAt,
-            updatedAt: account.updatedAt
+            updatedAt: account.updatedAt,
+            ownershipRaw: account.ownershipRaw
         )
     }
 
@@ -411,7 +465,8 @@ public final class ExportService: Loggable {
             lastSeenAt: memory.lastSeenAt,
             autoApply: memory.autoApply,
             createdAt: memory.createdAt,
-            categoryCountsJSON: memory.categoryCountsJSON
+            categoryCountsJSON: memory.categoryCountsJSON,
+            splitTemplateJSON: memory.splitTemplateJSON.isEmpty ? nil : memory.splitTemplateJSON
         )
     }
 
@@ -476,7 +531,8 @@ public final class ExportService: Loggable {
             priority: rule.priority,
             isEnabled: rule.isEnabled,
             sampleText: rule.sampleText,
-            ruleSetID: rule.ruleSet?.id
+            ruleSetID: rule.ruleSet?.id,
+            roleRaw: rule.roleRaw
         )
     }
 
@@ -490,7 +546,7 @@ public final class ExportService: Loggable {
             feeMinor: entry.feeMinor,
             currencyCode: entry.currencyCode,
             accountID: entry.account?.id,
-            categoryID: entry.category?.id,
+            categoryID: nil,
             payee: entry.payee,
             note: entry.note,
             sourceRaw: entry.sourceRaw,
@@ -506,7 +562,40 @@ public final class ExportService: Loggable {
             transferID: entry.transfer?.id,
             loanID: entry.loan?.id,
             investmentCashFlowID: entry.investmentCashFlow?.id,
-            ingestFingerprint: entry.ingestFingerprint
+            ingestFingerprint: entry.ingestFingerprint,
+            ingestPayee: entry.ingestPayee,
+            channelName: entry.channelName,
+            confirmationRef: entry.confirmationRef,
+            confirmationSender: entry.confirmationSender,
+            confirmedAt: entry.confirmedAt,
+            confirmationText: entry.confirmationText,
+            isConfirmationOnly: entry.isConfirmationOnly
+        )
+    }
+
+    private func backup(_ tag: Tag) -> BackupTag {
+        BackupTag(
+            id: tag.id,
+            name: tag.name,
+            note: tag.note,
+            colorHex: tag.colorHex,
+            symbolName: tag.symbolName,
+            statusRaw: tag.statusRaw,
+            closedAt: tag.closedAt,
+            createdAt: tag.createdAt,
+            updatedAt: tag.updatedAt
+        )
+    }
+
+    private func backup(_ line: LedgerEntryLine) -> BackupLedgerEntryLine {
+        BackupLedgerEntryLine(
+            id: line.id,
+            entryID: line.entry?.id ?? UUID(),
+            amountMinor: line.amountMinor,
+            sortIndex: line.sortIndex,
+            createdAt: line.createdAt,
+            categoryID: line.category?.id,
+            tagIDs: (line.tags ?? []).map(\.id)
         )
     }
 
@@ -1284,15 +1373,18 @@ public final class ExportService: Loggable {
                 entry.account = nil
             }
 
-            if let categoryID = backup.categoryID {
-                if let category = categories[categoryID] {
-                    entry.category = category
+            // Version 1 carried one category on the entry; version 2 restores lines below.
+            if document.lines == nil {
+                if let categoryID = backup.categoryID {
+                    if let category = categories[categoryID] {
+                        ensureSingleLine(on: entry, category: category)
+                    } else {
+                        ensureSingleLine(on: entry, category: nil)
+                        skipped += 1
+                    }
                 } else {
-                    entry.category = nil
-                    skipped += 1
+                    ensureSingleLine(on: entry, category: nil)
                 }
-            } else {
-                entry.category = nil
             }
 
             if let transferID = backup.transferID {
@@ -1518,12 +1610,92 @@ public final class ExportService: Loggable {
             }
         }
 
+        try restoreTagsAndLines(document, skipped: &skipped)
+
         try context.save()
         ManotiNotifications.postDataChanged()
 
         log("Restored \(inserted) inserted, \(updated) updated, \(skipped) skipped", level: .info)
 
         return RestoreSummary(inserted: inserted, updated: updated, skipped: skipped)
+    }
+
+    /// Restores tags and the split lines of a version 2 backup. Version 1 files synthesise
+    /// their single line from the entry's legacy category in the relationship pass above.
+    private func restoreTagsAndLines(_ document: BackupDocument, skipped: inout Int) throws {
+        guard let backupTags = document.tags, let backupLines = document.lines else {
+            return
+        }
+
+        var tags = try index(Tag.self, id: \.id)
+
+        for backup in backupTags {
+            _ = upsert(
+                backup.id,
+                in: &tags,
+                create: { Tag(name: backup.name) },
+                apply: { tag in
+                    tag.id = backup.id
+                    tag.name = backup.name
+                    tag.note = backup.note
+                    tag.colorHex = backup.colorHex
+                    tag.symbolName = backup.symbolName
+                    tag.statusRaw = backup.statusRaw
+                    tag.closedAt = backup.closedAt
+                    tag.createdAt = backup.createdAt
+                    tag.updatedAt = backup.updatedAt
+                }
+            )
+        }
+
+        let entries = try index(LedgerEntry.self, id: \.id)
+        let categories = try index(SpendingCategory.self, id: \.id)
+        var lines = try index(LedgerEntryLine.self, id: \.id)
+
+        for backup in backupLines {
+            guard let entry = entries[backup.entryID] else {
+                skipped += 1
+                continue
+            }
+
+            if let categoryID = backup.categoryID, categories[categoryID] == nil {
+                skipped += 1
+            }
+
+            _ = upsert(
+                backup.id,
+                in: &lines,
+                create: {
+                    LedgerEntryLine(amountMinor: backup.amountMinor, sortIndex: backup.sortIndex)
+                },
+                apply: { line in
+                    line.id = backup.id
+                    line.amountMinor = backup.amountMinor
+                    line.sortIndex = backup.sortIndex
+                    line.createdAt = backup.createdAt
+                    line.entry = entry
+                    line.category = backup.categoryID.flatMap { categories[$0] }
+                    line.tags = backup.tagIDs.compactMap { tags[$0] }
+                }
+            )
+        }
+
+        // A merge replaces the lines of every entry in the file. Leaving the old lines behind
+        // would make the entry's lines sum to more than its amount.
+        let entryIDs = Set(backupLines.map(\.entryID))
+        let keepIDs = Set(backupLines.map(\.id))
+
+        for entryID in entryIDs {
+            guard let entry = entries[entryID] else {
+                continue
+            }
+
+            for line in entry.lines ?? [] where !keepIDs.contains(line.id) {
+                context.delete(line)
+            }
+
+            entry.lines = (entry.lines ?? []).filter { keepIDs.contains($0.id) }
+        }
     }
 
     // MARK: - Scalar application
@@ -1584,6 +1756,7 @@ public final class ExportService: Loggable {
         account.sortIndex = backup.sortIndex
         account.createdAt = backup.createdAt
         account.updatedAt = backup.updatedAt
+        account.ownership = AccountOwnership(rawValue: backup.ownershipRaw ?? "") ?? .personal
     }
 
     private func apply(_ backup: BackupAccountIdentifier, to identifier: AccountIdentifier) {
@@ -1601,6 +1774,7 @@ public final class ExportService: Loggable {
         memory.autoApply = backup.autoApply
         memory.createdAt = backup.createdAt
         memory.categoryCountsJSON = backup.categoryCountsJSON ?? ""
+        memory.splitTemplateJSON = backup.splitTemplateJSON ?? ""
     }
 
     private func apply(_ backup: BackupMerchantAlias, to alias: MerchantAlias) {
@@ -1648,6 +1822,7 @@ public final class ExportService: Loggable {
         rule.id = backup.id
         rule.name = backup.name
         rule.messageTypeRaw = backup.messageTypeRaw
+        rule.roleRaw = backup.roleRaw ?? MessageRole.transaction.rawValue
         rule.pattern = backup.pattern
         rule.fieldPatternsJSON = backup.fieldPatternsJSON
         rule.priority = backup.priority
@@ -1675,6 +1850,13 @@ public final class ExportService: Loggable {
         entry.confidence = backup.confidence
         entry.dedupeHash = backup.dedupeHash
         entry.ingestFingerprint = backup.ingestFingerprint ?? ""
+        entry.ingestPayee = backup.ingestPayee ?? ""
+        entry.channelName = backup.channelName ?? ""
+        entry.confirmationRef = backup.confirmationRef ?? ""
+        entry.confirmationSender = backup.confirmationSender ?? ""
+        entry.confirmedAt = backup.confirmedAt
+        entry.confirmationText = backup.confirmationText ?? ""
+        entry.isConfirmationOnly = backup.isConfirmationOnly ?? false
         entry.isSoftDeleted = backup.isSoftDeleted
     }
 

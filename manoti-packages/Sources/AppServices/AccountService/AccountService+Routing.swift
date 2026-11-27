@@ -89,7 +89,38 @@ nonisolated extension AccountService {
             return false
         }
 
+        // A phone may be written nationally (0700…) or internationally (254700…).
+        // Account numbers stay an exact match: a shared suffix is not an identity.
+        if identifier.type == .phone {
+            return AccountService.phoneDigitsMatch(digits, identifierDigits)
+        }
+
         return digits == identifierDigits
+    }
+
+    /// True when two phone numbers are the same in national or international form.
+    ///
+    /// Exact digits always match. Otherwise the last nine digits must agree: that covers
+    /// `0700 000 000` and `+254 700 000 000` without rewriting already-stored identifiers.
+    /// The trade-off is that two numbers from different countries sharing the last nine
+    /// digits also match. A single-user, Kenya-first app accepts that; see the design.
+    nonisolated public static func phoneDigitsMatch(_ lhs: String, _ rhs: String) -> Bool {
+        let left = lhs.filter(\.isNumber)
+        let right = rhs.filter(\.isNumber)
+
+        guard !left.isEmpty, !right.isEmpty else {
+            return false
+        }
+
+        if left == right {
+            return true
+        }
+
+        guard left.count >= 9, right.count >= 9 else {
+            return false
+        }
+
+        return left.suffix(9) == right.suffix(9)
     }
 
     private func normalisedSender(_ value: String) -> String {

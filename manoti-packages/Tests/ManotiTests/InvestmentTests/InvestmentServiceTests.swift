@@ -62,7 +62,7 @@ struct InvestmentServiceTests {
         )
     }
 
-    @Test("A bond purchase moves cash into an asset and leaves net worth unchanged")
+    @Test("A bond purchase moves cash into an asset")
     func purchaseIsNetWorthNeutral() throws {
         let services = try makeServices()
         let account = try services.accounts.create(
@@ -84,13 +84,9 @@ struct InvestmentServiceTests {
         #expect(purchase.ledgerEntry?.amountMinor == 5_275_360)
         #expect(purchase.ledgerEntry?.account?.id == account.id)
         #expect(purchase.ledgerEntry?.signedAmountMinor == -5_275_360)
-
-        let worth = try services.insights.netWorth(accounts: [account], displayCurrency: .kes)
-        #expect(worth.amount.minorUnits == 10_000_000)
-        #expect(worth.missingRates.isEmpty)
     }
 
-    @Test("A pending settlement holds no cash, appears as pending and is not in net worth")
+    @Test("A pending settlement holds no cash and appears as pending")
     func pendingSettlement() throws {
         let services = try makeServices()
         let account = try services.accounts.create(
@@ -103,9 +99,6 @@ struct InvestmentServiceTests {
         #expect(investment.cashFlows?.count == 1)
         #expect(investment.cashFlows?.first?.status == .pending)
         #expect(investment.cashFlows?.first?.ledgerEntry == nil)
-
-        let worth = try services.insights.netWorth(accounts: [account], displayCurrency: .kes)
-        #expect(worth.amount.minorUnits == 10_000_000)
 
         let summary = try services.investments.summary(displayCurrency: .kes, asOf: date(2026, 11, 21))
         #expect(summary.totalNominal.isZero)
@@ -161,9 +154,6 @@ struct InvestmentServiceTests {
         #expect(flow.ledgerEntry?.amountMinor == 289_283)
         #expect(account.balance.minorUnits == 5_013_923)
 
-        let worth = try services.insights.netWorth(accounts: [account], displayCurrency: .kes)
-        #expect(worth.amount.minorUnits == 10_289_283)
-
         let now = date(2027, 1, 19)
         let expenses = try services.insights.total(
             kind: .expense,
@@ -194,9 +184,6 @@ struct InvestmentServiceTests {
         #expect(flow.ledgerEntry?.kind == .investmentIn)
         #expect(flow.ledgerEntry?.signedAmountMinor == 5_000_000)
         #expect(account.balance.minorUnits == 9_724_640)
-
-        let worth = try services.insights.netWorth(accounts: [account], displayCurrency: .kes)
-        #expect(worth.amount.minorUnits == 9_724_640)
 
         let summary = try services.investments.summary(displayCurrency: .kes, asOf: date(2034, 1, 10))
         #expect(summary.totalNominal.isZero)
@@ -254,13 +241,6 @@ struct InvestmentServiceTests {
         #expect(account.balance.minorUnits == 0)
         #expect(investment.cashFlows?.first?.kind == .contribution)
         #expect(investment.currentValueMinor(asOf: date(2026, 11, 21)) == 10_941_621)
-
-        let worth = try services.insights.netWorth(
-            accounts: [account],
-            displayCurrency: .kes,
-            asOf: date(2026, 11, 21)
-        )
-        #expect(worth.amount.minorUnits == 10_941_621)
 
         let summary = try services.investments.summary(displayCurrency: .kes, asOf: date(2026, 11, 21))
         #expect(summary.totalNominal.minorUnits == 10_000_000)
@@ -416,9 +396,6 @@ struct InvestmentServiceTests {
         #expect(account.balance.minorUnits == 9_050_000)
         #expect(bill.cashFlows?.first?.ledgerEntry?.kind == .investmentOut)
 
-        let worth = try services.insights.netWorth(accounts: [account], displayCurrency: .kes)
-        #expect(worth.amount.minorUnits == 10_000_000)
-
         let expenses = try services.insights.total(
             kind: .expense,
             from: now.addingTimeInterval(-86_400),
@@ -428,7 +405,7 @@ struct InvestmentServiceTests {
         #expect(expenses.amount.isZero)
     }
 
-    @Test("Deleting an investment reverses its cash and hides it from lists and net worth")
+    @Test("Deleting an investment reverses its cash and hides it from lists")
     func deleteInvestment() throws {
         let services = try makeServices()
         let account = try services.accounts.create(
@@ -453,9 +430,6 @@ struct InvestmentServiceTests {
         #expect(flows.compactMap(\.ledgerEntry).allSatisfy { $0.isSoftDeleted })
         #expect(account.balance.minorUnits == 10_000_000)
         #expect(try services.investments.fetchInvestments(includeMatured: true).isEmpty)
-
-        let worth = try services.insights.netWorth(accounts: [account], displayCurrency: .kes)
-        #expect(worth.amount.minorUnits == 10_000_000)
     }
 
     @Test("The note can be edited without changing the recorded terms")

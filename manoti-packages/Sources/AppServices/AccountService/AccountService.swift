@@ -45,6 +45,7 @@ nonisolated public final class AccountService: Loggable {
         currencyCode: String = CurrencyCatalog.defaultCurrency.code,
         colorHex: String = "#2F80ED",
         symbolName: String = "building.columns",
+        ownership: AccountOwnership = .personal,
         openingBalanceMinor: Int64 = 0,
         openedAt: Date = Date()
     ) throws -> Account {
@@ -64,6 +65,7 @@ nonisolated public final class AccountService: Loggable {
             currencyCode: currencyCode,
             colorHex: colorHex,
             symbolName: symbolName,
+            ownership: ownership,
             sortIndex: existing.count
         )
         context.insert(account)
@@ -114,7 +116,8 @@ nonisolated public final class AccountService: Loggable {
         kind: AccountKind,
         colorHex: String,
         symbolName: String,
-        institution: String
+        institution: String,
+        ownership: AccountOwnership? = nil
     ) throws {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -131,6 +134,11 @@ nonisolated public final class AccountService: Loggable {
         account.colorHex = HexColor.normalised(colorHex) ?? account.colorHex
         account.symbolName = symbolName
         account.institution = institution.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let ownership {
+            account.ownership = ownership
+        }
+
         account.updatedAt = Date()
         try context.save()
         ManotiNotifications.postDataChanged()
@@ -264,7 +272,12 @@ nonisolated public final class AccountService: Loggable {
                 return candidate.value.caseInsensitiveCompare(value) == .orderedSame
             }
 
-            return candidate.normalisedValue == value.filter(\.isNumber)
+            let digits = value.filter(\.isNumber)
+            if candidate.type == .phone, type == .phone {
+                return AccountService.phoneDigitsMatch(candidate.normalisedValue, digits)
+            }
+
+            return candidate.normalisedValue == digits
         }
 
         guard !clash else {

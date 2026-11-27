@@ -630,28 +630,35 @@ nonisolated public final class BudgetService: Loggable {
                 continue
             }
 
-            let amount = Money(minorUnits: abs(entry.signedAmountMinor), currency: entry.currency)
-            let converted: Money
-            let missingCurrency: String?
-            if let value = rates.convert(amount, to: displayCurrency, on: entry.occurredAt) {
-                converted = value
-                // Same-currency entries need no rate, so they never report a missing one.
-                missingCurrency = nil
-            } else {
-                missingCurrency = entry.currency.code
-                result.missingRates.insert(entry.currency.code)
-                converted = fallback(amount, to: displayCurrency)
+            // Personal budgets never include company spending.
+            guard entry.account?.isCompany != true else {
+                continue
             }
 
-            result.totalMinor += converted.minorUnits
-
-            if let categoryID = entry.category?.id {
-                result.byCategory[categoryID, default: 0] += converted.minorUnits
-                if let missingCurrency {
-                    result.missingByCategory[categoryID, default: []].insert(missingCurrency)
+            for line in entry.orderedLines {
+                let amount = Money(minorUnits: line.amountMinor, currency: entry.currency)
+                let converted: Money
+                let missingCurrency: String?
+                if let value = rates.convert(amount, to: displayCurrency, on: entry.occurredAt) {
+                    converted = value
+                    // Same-currency entries need no rate, so they never report a missing one.
+                    missingCurrency = nil
+                } else {
+                    missingCurrency = entry.currency.code
+                    result.missingRates.insert(entry.currency.code)
+                    converted = fallback(amount, to: displayCurrency)
                 }
-            } else {
-                result.uncategorizedMinor += converted.minorUnits
+
+                result.totalMinor += converted.minorUnits
+
+                if let categoryID = line.category?.id {
+                    result.byCategory[categoryID, default: 0] += converted.minorUnits
+                    if let missingCurrency {
+                        result.missingByCategory[categoryID, default: []].insert(missingCurrency)
+                    }
+                } else {
+                    result.uncategorizedMinor += converted.minorUnits
+                }
             }
         }
 

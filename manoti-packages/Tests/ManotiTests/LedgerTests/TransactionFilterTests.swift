@@ -61,6 +61,48 @@ struct TransactionFilterTests {
         )
     }
 
+    private func tag(_ name: String, colorHex: String = "#27AE60") -> AppModels.Tag {
+        AppModels.Tag(name: name, colorHex: colorHex, symbolName: "tag")
+    }
+
+    private func attach(_ tags: [AppModels.Tag], category: SpendingCategory? = nil, to entry: LedgerEntry) {
+        let line = LedgerEntryLine(amountMinor: entry.amountMinor, category: category, tags: tags)
+        line.entry = entry
+        entry.lines = [line]
+    }
+
+    @Test("A tag filter keeps entries carrying any selected tag")
+    func tagFilter() {
+        let nakuru = tag("Nakuru")
+        let personal = tag("Personal")
+        let tagged = entry(at: date(2026, 11, 23, 8))
+        let other = entry(at: date(2026, 11, 23, 9))
+        let plain = entry(at: date(2026, 11, 23, 10))
+        attach([nakuru], to: tagged)
+        attach([personal], to: other)
+
+        var filter = TransactionFilter()
+        filter.tagIDs = [nakuru.id]
+
+        let result = filtered([tagged, other, plain], filter: filter)
+        #expect(result.map(\.id) == [tagged.id])
+        #expect(filtered([tagged, other, plain], filter: TransactionFilter()).count == 3)
+    }
+
+    @Test("Search matches a tag name and a split line category")
+    func searchLinesAndTags() {
+        let nakuru = tag("Nakuru assignment")
+        let groceries = SpendingCategory(name: "Groceries", symbolName: "cart", colorHex: "#27AE60")
+        let split = entry(at: date(2026, 11, 23, 8), payee: "Supermarket")
+        let line = LedgerEntryLine(amountMinor: 5_000, category: groceries, tags: [nakuru])
+        line.entry = split
+        split.lines = [line]
+        let plain = entry(at: date(2026, 11, 23, 9), payee: "Cafe")
+
+        #expect(filtered([split, plain], search: "nakuru").map(\.id) == [split.id])
+        #expect(filtered([split, plain], search: "groceries").map(\.id) == [split.id])
+    }
+
     @Test("Today keeps only today's entries")
     func today() {
         let entries = [

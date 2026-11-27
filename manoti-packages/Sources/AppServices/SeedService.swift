@@ -170,6 +170,7 @@ public final class SeedService: Loggable {
                 let rule = ParseRule(
                     name: ruleSeed.name,
                     messageType: ruleSeed.messageType,
+                    role: ruleSeed.role,
                     pattern: ruleSeed.pattern,
                     fieldPatterns: ruleSeed.fieldPatterns,
                     priority: index,

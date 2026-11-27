@@ -10,6 +10,7 @@ nonisolated public struct ParsedMessage: Sendable, Equatable {
     public var ruleSetName: String
     public var ruleName: String
     public var messageType: LedgerEntryKind
+    public var role: MessageRole
     public var amountMinor: Int64
     public var currencyCode: String
     public var feeMinor: Int64
@@ -29,6 +30,7 @@ nonisolated public struct ParsedMessage: Sendable, Equatable {
         ruleSetName: String,
         ruleName: String,
         messageType: LedgerEntryKind,
+        role: MessageRole = .transaction,
         amountMinor: Int64,
         currencyCode: String,
         feeMinor: Int64 = 0,
@@ -47,6 +49,7 @@ nonisolated public struct ParsedMessage: Sendable, Equatable {
         self.ruleSetName = ruleSetName
         self.ruleName = ruleName
         self.messageType = messageType
+        self.role = role
         self.amountMinor = amountMinor
         self.currencyCode = currencyCode
         self.feeMinor = feeMinor

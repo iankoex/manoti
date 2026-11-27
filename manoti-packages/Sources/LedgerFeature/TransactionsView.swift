@@ -17,9 +17,11 @@ public struct TransactionsView: View {
     @Environment(AccountService.self) private var accountService
     @Environment(LedgerService.self) private var ledgerService
     @Environment(InsightsService.self) private var insights
+    @Environment(TagService.self) private var tagService
 
     @State private var entries: [LedgerEntry] = []
     @State private var accounts: [Account] = []
+    @State private var tags: [Tag] = []
     @State private var filter = TransactionFilter()
     @State private var searchText = ""
     @State private var visibleCount = TransactionsView.pageSize
@@ -89,7 +91,8 @@ public struct TransactionsView: View {
             TransactionFilterView(
                 filter: $filter,
                 currency: appService.displayCurrency,
-                accounts: accounts
+                accounts: accounts,
+                tags: tags
             )
         }
         .onChange(of: filter) { _, _ in
@@ -165,6 +168,7 @@ public struct TransactionsView: View {
     private func reload() {
         entries = (try? ledgerService.transactions()) ?? []
         accounts = (try? accountService.fetchAccounts(includeArchived: true)) ?? []
+        tags = (try? tagService.fetchTags(includeClosed: true)) ?? []
         rateBook = try? insights.rateBook()
         now = Date()
     }
@@ -192,6 +196,12 @@ public struct TransactionsView: View {
                             var ids = filter.accountIDs
                             ids.insert(account.id)
                             filter.accountIDs = ids == Set(accounts.map(\.id)) ? [] : ids
+                        }
+                    }
+
+                    ForEach(tags.filter { filter.tagIDs.contains($0.id) }) { tag in
+                        filterChip(tag.name, systemImage: "xmark") {
+                            filter.tagIDs.remove(tag.id)
                         }
                     }
 

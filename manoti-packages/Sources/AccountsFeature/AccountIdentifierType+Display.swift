@@ -37,7 +37,7 @@ extension AccountIdentifierType {
         switch self {
             case .cardLast4: "Exactly the last four digits on the card."
             case .accountNumber: "Digits only, at least four."
-            case .phone: "The number as it appears in messages, e.g. 254700000000."
+            case .phone: "Any common format, e.g. 254700000000, +254 700 000 000 or 0700 000 000."
             case .sender: "The sender name or shortcode shown by Messages."
         }
     }

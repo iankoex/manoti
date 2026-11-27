@@ -40,9 +40,11 @@ nonisolated public struct MaintenanceReport: Equatable, Sendable {
 /// without the main actor being available.
 nonisolated public struct MaintenancePipeline {
     private let context: ModelContext
+    private let defaults: UserDefaults
 
-    public init(context: ModelContext) {
+    public init(context: ModelContext, defaults: UserDefaults = .standard) {
         self.context = context
+        self.defaults = defaults
     }
 
     // MARK: - Runs
@@ -58,7 +60,14 @@ nonisolated public struct MaintenancePipeline {
         now: Date = Date(),
         isStopped: @Sendable () -> Bool = { Task.isCancelled }
     ) async -> MaintenanceReport {
+        let repaired = stop(isStopped) ? 0 : repairEntryLines()
+        _ = repaired
         let drained = stop(isStopped) ? 0 : drainPendingMessages()
+
+        if !stop(isStopped) {
+            runCorrelationRepairs()
+        }
+
         let settled = settlePendingInvestments(now: now, isStopped: isStopped)
         let notificationsRefreshed = await refreshNotifications(
             promptForNotifications: promptForNotifications,
@@ -89,6 +98,196 @@ nonisolated public struct MaintenancePipeline {
 
         let ingest = IngestService(context: context)
         return (try? IngestOutbox().drain(into: ingest)) ?? 0
+    }
+
+    /// Gives every expense and income without lines one uncategorised line for its full amount.
+    /// Old CloudKit records and older backups can arrive line-less; this makes them safe to open.
+    @discardableResult
+    public func repairEntryLines() -> Int {
+        let descriptor = FetchDescriptor<LedgerEntry>(
+            predicate: #Predicate<LedgerEntry> {
+                !$0.isSoftDeleted && ($0.kindRaw == "expense" || $0.kindRaw == "income")
+            }
+        )
+
+        guard let entries = try? context.fetch(descriptor) else {
+            return 0
+        }
+
+        var repaired = 0
+
+        for entry in entries where (entry.lines ?? []).isEmpty {
+            let line = LedgerEntryLine(amountMinor: entry.amountMinor)
+            context.insert(line)
+            line.entry = entry
+            entry.lines = [line]
+            repaired += 1
+        }
+
+        if repaired > 0 {
+            try? context.save()
+        }
+
+        return repaired
+    }
+
+    // MARK: - Correlation repairs
+
+    /// Runs the one-time and idempotent correlation repairs. Exposed so tests can run them
+    /// without the notifications and widget stages.
+    @discardableResult
+    public func runCorrelationRepairs() -> Int {
+        seedIngestPayees() + rereadUnparsedMessages() + linkUnpairedTransfers()
+    }
+
+    /// Old message entries did not record the payee as parsed. Copying it once lets a late
+    /// bank confirmation replace a generic biller with the real merchant.
+    @discardableResult
+    private func seedIngestPayees() -> Int {
+        let descriptor = FetchDescriptor<LedgerEntry>(
+            predicate: #Predicate<LedgerEntry> {
+                !$0.isSoftDeleted && $0.sourceRaw == "message" && $0.ingestPayee == ""
+                    && $0.payee != ""
+            }
+        )
+
+        guard let entries = try? context.fetch(descriptor), !entries.isEmpty else {
+            return 0
+        }
+
+        for entry in entries {
+            entry.ingestPayee = entry.payee
+        }
+
+        try? context.save()
+        return entries.count
+    }
+
+    /// Re-reads messages the parser once could not understand, once per shared-rules
+    /// revision. A receipt that now matches an entry is consumed; a new movement is kept
+    /// in the Inbox like any other.
+    @discardableResult
+    private func rereadUnparsedMessages() -> Int {
+        // Kept as a literal: `SharedRulesService.revisionKey` is main-actor-isolated and
+        // this pipeline runs without the main actor.
+        let currentRevision = defaults.integer(forKey: "manoti.rulesRevision")
+        guard currentRevision > 0 else {
+            return 0
+        }
+
+        let marker = "manoti.unparsedReprocessRevision"
+        guard defaults.integer(forKey: marker) != currentRevision else {
+            return 0
+        }
+
+        let descriptor = FetchDescriptor<UnparsedMessage>(
+            predicate: #Predicate<UnparsedMessage> {
+                !$0.isDismissed && $0.rawText != ""
+            }
+        )
+
+        guard let messages = try? context.fetch(descriptor), !messages.isEmpty else {
+            defaults.set(currentRevision, forKey: marker)
+            return 0
+        }
+
+        let ingest = IngestService(context: context)
+        var consumed = 0
+
+        for message in messages {
+            guard
+                let outcome = try? ingest.ingest(
+                    text: message.rawText,
+                    sender: message.sender.isEmpty ? nil : message.sender,
+                    receivedAt: message.receivedAt
+                )
+            else {
+                continue
+            }
+
+            if outcome.status != .unrecognised {
+                context.delete(message)
+                consumed += 1
+            }
+        }
+
+        if context.hasChanges {
+            try? context.save()
+        }
+
+        defaults.set(currentRevision, forKey: marker)
+        return consumed
+    }
+
+    /// Links existing unpaired transfer legs whose references agree. Amount-and-time-only
+    /// candidates stay for the user to confirm in Transfers.
+    @discardableResult
+    private func linkUnpairedTransfers() -> Int {
+        let descriptor = FetchDescriptor<LedgerEntry>(
+            sortBy: [SortDescriptor(\LedgerEntry.occurredAt, order: .reverse)]
+        )
+
+        guard let entries = try? context.fetch(descriptor) else {
+            return 0
+        }
+
+        let legs = entries.filter {
+            $0.kind.isTransferLeg && $0.transfer == nil && $0.isPosted && $0.account != nil
+        }
+
+        var linked = 0
+
+        for leg in legs {
+            guard leg.transfer == nil else {
+                continue
+            }
+
+            let oppositeKind: LedgerEntryKind = leg.kind == .transferOut ? .transferIn : .transferOut
+            let legRefs = Set(
+                [leg.externalRef, leg.counterpartRef]
+                    .map(MovementRules.normaliseReference)
+                    .filter { !$0.isEmpty }
+            )
+
+            guard !legRefs.isEmpty else {
+                continue
+            }
+
+            let candidate = legs.first { other in
+                guard other.id != leg.id,
+                    other.kind == oppositeKind,
+                    other.transfer == nil,
+                    other.account?.id != leg.account?.id
+                else {
+                    return false
+                }
+
+                let otherRefs = [other.externalRef, other.counterpartRef]
+                    .map(MovementRules.normaliseReference)
+                return otherRefs.contains { legRefs.contains($0) }
+            }
+
+            guard let candidate else {
+                continue
+            }
+
+            let previous = (leg.status, candidate.status)
+            leg.status = .confirmed
+            candidate.status = .confirmed
+
+            do {
+                _ = try TransferLinker(context: context).link(
+                    outLeg: leg.kind == .transferOut ? leg : candidate,
+                    inLeg: leg.kind == .transferIn ? leg : candidate
+                )
+                linked += 1
+            } catch {
+                leg.status = previous.0
+                candidate.status = previous.1
+            }
+        }
+
+        return linked
     }
 
     // MARK: - Stages

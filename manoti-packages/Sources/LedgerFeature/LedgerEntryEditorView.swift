@@ -14,9 +14,12 @@ public struct LedgerEntryEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AccountService.self) private var accountService
     @Environment(CategoryService.self) private var categoryService
+    @Environment(TagService.self) private var tagService
     @Environment(LedgerService.self) private var ledgerService
+    @Environment(TransferService.self) private var transferService
 
     @State private var state: EntryFormState
+    @State private var isConfirmingConversion = false
     @State private var errorMessage: String?
 
     public init(entry: LedgerEntry) {
@@ -40,7 +43,17 @@ public struct LedgerEntryEditorView: View {
                     }
                 }
                 .task {
-                    state.reload(accountService: accountService, categoryService: categoryService)
+                    state.reload(accountService: accountService, categoryService: categoryService, tagService: tagService)
+                }
+                .confirmationDialog(
+                    "Turn this entry into a transfer?",
+                    isPresented: $isConfirmingConversion,
+                    titleVisibility: .visible
+                ) {
+                    Button("Convert to transfer", role: .destructive) { performSave() }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("The split lines and tags on this entry will be removed. A transfer has no categories.")
                 }
                 .alert(
                     "Could not update",
@@ -57,7 +70,22 @@ public struct LedgerEntryEditorView: View {
     }
 
     private func save() {
+        if state.conversionDropsSplitOrTags {
+            isConfirmingConversion = true
+            return
+        }
+
+        performSave()
+    }
+
+    private func performSave() {
         do {
+            if state.convertsToTransfer {
+                _ = try state.save(ledger: ledgerService, transfer: transferService)
+                dismiss()
+                return
+            }
+
             try state.save(ledger: ledgerService)
             dismiss()
         } catch {
@@ -66,7 +94,7 @@ public struct LedgerEntryEditorView: View {
     }
 
     private var title: String {
-        if state.kind.isTransferLeg {
+        if state.isTransferForm || state.kind.isTransferLeg {
             return "Edit transfer"
         }
 

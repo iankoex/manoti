@@ -31,46 +31,6 @@ struct TransferFormStateTests {
         return Fixtures(state: state, accounts: accounts, transfers: transfers, context: context)
     }
 
-    @Test("The keypad edits the amount, fee and received fields separately")
-    func keypadTargets() throws {
-        let fixtures = try makeFixtures()
-        let kes = try fixtures.accounts.create(name: "KES", kind: .bank, currencyCode: "KES")
-        let usd = try fixtures.accounts.create(name: "USD", kind: .bank, currencyCode: "USD")
-        fixtures.state.reload(accountService: fixtures.accounts)
-        fixtures.state.fromID = kes.id
-        fixtures.state.toID = usd.id
-
-        fixtures.state.activeField = .amount
-        for key in ["1", "0", "0"] {
-            fixtures.state.press(key)
-        }
-
-        fixtures.state.activeField = .fee
-        fixtures.state.press("5")
-
-        fixtures.state.activeField = .received
-        fixtures.state.press("7")
-
-        #expect(fixtures.state.amountText == "100")
-        #expect(fixtures.state.feeText == "5")
-        #expect(fixtures.state.receivedText == "7")
-    }
-
-    @Test("Received is ignored when both accounts use the same currency")
-    func receivedIgnoredForSameCurrency() throws {
-        let fixtures = try makeFixtures()
-        let kes = try fixtures.accounts.create(name: "KES", kind: .bank, currencyCode: "KES")
-        let mpesa = try fixtures.accounts.create(name: "M-Pesa", kind: .mobileMoney)
-        fixtures.state.reload(accountService: fixtures.accounts)
-        fixtures.state.fromID = kes.id
-        fixtures.state.toID = mpesa.id
-
-        fixtures.state.activeField = .received
-        fixtures.state.press("9")
-
-        #expect(fixtures.state.receivedText.isEmpty)
-    }
-
     @Test("A non-numeric fee blocks saving")
     func invalidFee() throws {
         let fixtures = try makeFixtures()

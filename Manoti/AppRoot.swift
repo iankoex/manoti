@@ -20,6 +20,7 @@ final class AppRoot {
         let notificationService: NotificationService
         let accountService: AccountService
         let categoryService: CategoryService
+        let tagService: TagService
         let ledgerService: LedgerService
         let transferService: TransferService
         let loanService: LoanService
@@ -83,6 +84,10 @@ final class AppRoot {
         // Replay anything a Shortcut parked while the app was unavailable.
         let maintenanceService = AppMaintenance(context: context)
         _ = maintenanceService.drainAtLaunch()
+        _ = MaintenancePipeline(context: context).repairEntryLines()
+        // Clean up rows created before message correlation existed: seed the as-ingested
+        // payee, consume receipts the new rules can now read, and pair old transfer legs.
+        _ = MaintenancePipeline(context: context).runCorrelationRepairs()
         AppBackgroundScheduler.register(container: container)
         Task { await AppBackgroundScheduler.schedule() }
 
@@ -106,6 +111,7 @@ final class AppRoot {
             notificationService: NotificationService(context: context),
             accountService: AccountService(context: context),
             categoryService: CategoryService(context: context),
+            tagService: TagService(context: context),
             ledgerService: LedgerService(context: context),
             transferService: TransferService(context: context),
             loanService: LoanService(context: context),

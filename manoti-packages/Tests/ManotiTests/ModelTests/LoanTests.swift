@@ -108,7 +108,7 @@ struct LoanTests {
 
     @Test("The schema stores Loan")
     func schemaContainsLoan() {
-        #expect(ManotiSchema.models.count == 27)
+        #expect(ManotiSchema.models.count == 29)
         #expect(ManotiSchema.models.contains { $0 == Loan.self })
     }
 

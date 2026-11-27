@@ -49,7 +49,7 @@ struct SavingsServiceTests {
         try fixtures.savings.addContribution(to: fund, amountMinor: 5_000, account: account)
 
         #expect(fund.fundedMinor == 25_000)
-        #expect(try fixtures.savings.contributions(for: fund).count == 2)
+        #expect(fixtures.savings.contributions(for: fund).count == 2)
 
         try fixtures.savings.updateFund(
             fund,

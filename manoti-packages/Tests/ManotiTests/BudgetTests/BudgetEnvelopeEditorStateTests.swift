@@ -83,7 +83,7 @@ struct BudgetEnvelopeEditorStateTests {
         in context: ModelContext
     ) {
         let entry = LedgerEntry(kind: .expense, amountMinor: amountMinor, currencyCode: "KES", occurredAt: occurredAt)
-        entry.category = category
+        entry.attachSingleLine(category: category, in: context)
         entry.status = .confirmed
         context.insert(entry)
     }

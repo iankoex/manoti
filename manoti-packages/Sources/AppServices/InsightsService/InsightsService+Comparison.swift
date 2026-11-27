@@ -28,7 +28,8 @@ nonisolated extension InsightsService {
         containing date: Date = Date(),
         displayCurrency: Currency,
         calendar: Calendar = .current,
-        smallSpendThresholdMinor: Int64? = nil
+        smallSpendThresholdMinor: Int64? = nil,
+        ownership: AccountOwnershipScope = .personal
     ) throws -> SpendComparison {
         guard let windows = ComparisonWindows(kind: kind, containing: date, calendar: calendar) else {
             throw InsightsError.invalidPeriod
@@ -59,7 +60,7 @@ nonisolated extension InsightsService {
         let book = try exchangeRateBook(calendar: calendar)
         var accumulators = Array(repeating: SpendAccumulator(), count: trailing.count + 1)
 
-        for entry in entries where isSpending(entry) {
+        for entry in entries where isSpending(entry) && includes(entry, in: ownership) {
             guard let index = accumulatorIndex(for: entry.occurredAt, windows: windows, trailing: trailing) else {
                 continue
             }
@@ -71,20 +72,44 @@ nonisolated extension InsightsService {
                     from: index == 0 ? windows.current.start : trailing[index - 1].window.start,
                     to: calendar.startOfDay(for: entry.occurredAt)
                 ).day ?? 0
-            let category = entry.category
-            let meta = category.map {
-                CategoryMeta(name: $0.name, symbolName: $0.symbolName, colorHex: $0.colorHex)
-            }
             let payee = entry.payee.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            var lineAmounts: [SpendAccumulator.Line] = []
+            var missingCurrency = converted.missingCurrency
+
+            for line in entry.orderedLines {
+                let money = Money(minorUnits: line.amountMinor, currency: entry.currency)
+                let minorUnits: Int64
+
+                if let value = book.convert(money, to: displayCurrency, on: entry.occurredAt) {
+                    minorUnits = value.minorUnits
+                } else {
+                    if missingCurrency == nil {
+                        missingCurrency = entry.currency.code
+                    }
+
+                    minorUnits = fallback(money, to: displayCurrency).minorUnits
+                }
+
+                let lineCategory = line.category
+                lineAmounts.append(
+                    SpendAccumulator.Line(
+                        minorUnits: minorUnits,
+                        categoryID: lineCategory?.id,
+                        meta: lineCategory.map {
+                            CategoryMeta(name: $0.name, symbolName: $0.symbolName, colorHex: $0.colorHex)
+                        },
+                        isFixed: lineCategory?.isFixed == true
+                    )
+                )
+            }
 
             accumulators[index].add(
                 minorUnits: converted.minorUnits,
-                categoryID: category?.id,
-                meta: meta,
-                isFixed: category?.isFixed == true,
+                lines: lineAmounts,
                 payee: payee,
                 dayOffset: max(0, dayOffset),
-                missingCurrency: converted.missingCurrency
+                missingCurrency: missingCurrency
             )
         }
 
@@ -94,7 +119,8 @@ nonisolated extension InsightsService {
 
         for (offset, period) in trailing.enumerated() {
             let hasData = entries.contains { entry in
-                entry.isPosted && entry.occurredAt >= period.full.start && entry.occurredAt < period.full.end
+                entry.isPosted && includes(entry, in: ownership)
+                    && entry.occurredAt >= period.full.start && entry.occurredAt < period.full.end
             }
             guard hasData else {
                 continue
@@ -589,9 +615,7 @@ private nonisolated struct SpendAccumulator {
 
     mutating func add(
         minorUnits: Int64,
-        categoryID: UUID?,
-        meta: CategoryMeta?,
-        isFixed: Bool,
+        lines: [Line],
         payee: String,
         dayOffset: Int,
         missingCurrency: String?
@@ -599,15 +623,22 @@ private nonisolated struct SpendAccumulator {
         totalMinor += minorUnits
         byDay[dayOffset, default: 0] += minorUnits
 
-        if isFixed {
-            fixedMinor += minorUnits
-        } else {
-            variableMinor += minorUnits
-        }
+        let lineTotal = lines.reduce(0) { $0 + $1.minorUnits }
+        // Fees live on the entry, not on a line. They count as variable spending so that
+        // fixed + variable still equals the fee-inclusive total.
+        variableMinor += max(0, minorUnits - lineTotal)
 
-        if let categoryID, let meta {
-            byCategory[categoryID, default: 0] += minorUnits
-            categoryMeta[categoryID] = meta
+        for line in lines {
+            if line.isFixed {
+                fixedMinor += line.minorUnits
+            } else {
+                variableMinor += line.minorUnits
+            }
+
+            if let categoryID = line.categoryID, let meta = line.meta {
+                byCategory[categoryID, default: 0] += line.minorUnits
+                categoryMeta[categoryID] = meta
+            }
         }
 
         if !payee.isEmpty {
@@ -619,6 +650,13 @@ private nonisolated struct SpendAccumulator {
         if let missingCurrency {
             missingRates.insert(missingCurrency)
         }
+    }
+
+    struct Line {
+        let minorUnits: Int64
+        let categoryID: UUID?
+        let meta: CategoryMeta?
+        let isFixed: Bool
     }
 }
 

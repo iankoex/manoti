@@ -14,7 +14,7 @@ manoti-packages/            all Swift source, as a local Swift package
   Sources/Modifiers/        design tokens and reusable views
   Sources/NavigationFeature/     app shell, Home, tab routing
   Sources/AccountsFeature/       account list, editor, detail
-  Sources/QuickAddFeature/       keypad-first expense entry
+  Sources/QuickAddFeature/       system-keyboard expense entry
   Sources/LedgerFeature/         ledger row presentation
   Sources/TransfersFeature/      transfer form
   Tests/ManotiTests/        Swift Testing suites
@@ -33,6 +33,9 @@ open Manoti.xcodeproj                         # run the app in a simulator
 The package builds in Swift 6 language mode with `MainActor` default isolation. Pure value
 types (`Money`, `Currency`, `FXRate`, `ExchangeRateBook`, enums, seeds) are explicitly
 `nonisolated`; services and views are main-actor by default.
+
+Split lines changed the ledger schema. The app has no migration path: delete the app once
+(and optionally its iCloud data) before running a build that includes split lines.
 
 ## Conventions
 
@@ -56,10 +59,15 @@ Milestone 1 (foundation) and the core of Milestone 2 (ingestion) are implemented
 
 - Accounts with opening balances, colours, icons, currencies and archived state.
 - Expenses, income and adjustments with fees; balances derived from the ledger only.
+- Split lines on expenses and incomes: one transaction can carry several categories and tags, and
+  the lines must add up to the transaction.
+- Tags for assignments, invoices and quotations, with received, spent and balance totals, and a
+  closed state that shows the profit.
+- Personal and company accounts; company spending stays out of personal insights and budgets.
 - One Add sheet with Expense / Income / Transfer modes.
 - Transfers between accounts, same-currency and cross-currency, fee on the out leg.
-- Exchange rates with a latest-per-pair book; net worth converts to the display currency.
-- Keypad-first entry, account detail ledger, 7-day spend chart (Swift Charts).
+- Exchange rates with a latest-per-pair book; reports convert to the display currency.
+- System-keyboard entry with the amount focused, account detail ledger, 7-day spend chart (Swift Charts).
 - Bank/M-Pesa parser with editable rule sets, seeded for M-Pesa and I&M Bank, verified
   against seven real messages.
 - Inbox for messages that need an account or category, with merchant memory, amount/time

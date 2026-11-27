@@ -40,6 +40,7 @@ public struct AddEntryView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AccountService.self) private var accountService
     @Environment(CategoryService.self) private var categoryService
+    @Environment(TagService.self) private var tagService
     @Environment(LedgerService.self) private var ledgerService
     @Environment(TransferService.self) private var transferService
     @AppStorage("manoti.lastAccountID") private var lastAccountID = ""
@@ -121,7 +122,7 @@ public struct AddEntryView: View {
     }
 
     private func reload() {
-        entryState.reload(accountService: accountService, categoryService: categoryService)
+        entryState.reload(accountService: accountService, categoryService: categoryService, tagService: tagService)
         entryState.selectDefaultAccount(lastAccountID: lastAccountID)
         entryState.setKind(mode.ledgerKind)
         transferState.reload(accountService: accountService)
@@ -186,12 +187,10 @@ enum AddEntryFigureBridge {
     static func carry(from entry: EntryFormState, to transfer: TransferFormState) {
         transfer.amountText = entry.amountText
         transfer.feeText = entry.feeText
-        transfer.activeField = entry.activeField == .fee ? .fee : .amount
     }
 
     static func carry(from transfer: TransferFormState, to entry: EntryFormState) {
         entry.amountText = transfer.amountText
         entry.feeText = transfer.feeText
-        entry.activeField = transfer.activeField == .fee ? .fee : .amount
     }
 }

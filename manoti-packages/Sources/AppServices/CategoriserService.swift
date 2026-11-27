@@ -184,37 +184,89 @@ nonisolated public final class CategoriserService: Loggable {
             return
         }
 
-        let memories = try context.fetch(FetchDescriptor<MerchantMemory>())
-        let memory: MerchantMemory
-
-        if let exact = memories.first(where: { $0.merchantKey == key }) {
-            memory = exact
-        } else if let similar =
-            memories
-            .filter({ MerchantKey.similarity($0.merchantKey, key) >= 0.6 })
-            .max(by: { $0.timesSeen < $1.timesSeen })
-        {
-            // A different spelling of a merchant we already know: keep one memory and
-            // remember the spelling, rather than starting a second one from zero.
-            memory = similar
-
-            if !(similar.aliases ?? []).contains(where: { $0.aliasKey == key }) {
-                let alias = MerchantAlias(aliasKey: key)
-                alias.merchantMemory = similar
-                context.insert(alias)
-            }
-        } else {
-            let created = MerchantMemory(merchantKey: key, displayName: payee)
-            context.insert(created)
-            memory = created
-        }
-
+        let memory = try memory(for: payee, account: account)
         memory.category = category
         memory.displayName = payee
         memory.account = account ?? memory.account
         memory.timesSeen += 1
         memory.lastSeenAt = Date()
         memory.record(categoryID: category.id)
+    }
+
+    /// Remembers how a merchant's manual split was divided. It does not change the single
+    /// category memory, so auto-file behaviour stays what the user set.
+    public func recordSplitLearning(payee: String, template: SplitTemplate, account: Account? = nil) throws {
+        let key = MerchantKey.normalise(payee)
+        guard !key.isEmpty else {
+            return
+        }
+
+        let memory = try memory(for: payee, account: account)
+        memory.splitTemplate = template
+        memory.displayName = payee
+        memory.account = account ?? memory.account
+        memory.timesSeen += 1
+        memory.lastSeenAt = Date()
+        memory.record(categoryID: template.lines[0].categoryID)
+    }
+
+    /// The last manual split for this merchant, if there is one.
+    public func splitTemplate(for payee: String) throws -> SplitTemplate? {
+        let key = MerchantKey.normalise(payee)
+        guard !key.isEmpty else {
+            return nil
+        }
+
+        // Read-only: offering a template must not create an alias as a side effect.
+        let memories = try context.fetch(FetchDescriptor<MerchantMemory>())
+        let memory =
+            memories.first { $0.merchantKey == key }
+            ?? memories.first { ($0.aliases ?? []).contains { $0.aliasKey == key } }
+            ?? memories.first { MerchantKey.similarity($0.merchantKey, key) >= 0.6 }
+
+        return memory?.splitTemplate
+    }
+
+    private func memory(for payee: String, account: Account?) throws -> MerchantMemory {
+        let key = MerchantKey.normalise(payee)
+
+        if let known = try memoryIfKnown(for: key) {
+            return known
+        }
+
+        let created = MerchantMemory(merchantKey: key, displayName: payee)
+        context.insert(created)
+        return created
+    }
+
+    private func memoryIfKnown(for key: String) throws -> MerchantMemory? {
+        let memories = try context.fetch(FetchDescriptor<MerchantMemory>())
+
+        if let exact = memories.first(where: { $0.merchantKey == key }) {
+            return exact
+        }
+
+        if let aliased = memories.first(where: { ($0.aliases ?? []).contains { $0.aliasKey == key } }) {
+            return aliased
+        }
+
+        guard
+            let similar = memories
+                .filter({ MerchantKey.similarity($0.merchantKey, key) >= 0.6 })
+                .max(by: { $0.timesSeen < $1.timesSeen })
+        else {
+            return nil
+        }
+
+        // A different spelling of a merchant we already know: keep one memory and
+        // remember the spelling, rather than starting a second one from zero.
+        if !(similar.aliases ?? []).contains(where: { $0.aliasKey == key }) {
+            let alias = MerchantAlias(aliasKey: key)
+            alias.merchantMemory = similar
+            context.insert(alias)
+        }
+
+        return similar
     }
 
     public func setAutoApply(_ enabled: Bool, for payee: String) throws {
@@ -323,15 +375,18 @@ nonisolated public final class CategoriserService: Loggable {
         var counts: [UUID: (category: SpendingCategory, count: Int)] = [:]
 
         for entry in entries {
-            guard let category = entry.category,
-                isEligible(category, kind: kind),
-                MerchantKey.normalise(entry.payee) == key
-            else {
+            guard MerchantKey.normalise(entry.payee) == key else {
                 continue
             }
 
-            let current = counts[category.id]?.count ?? 0
-            counts[category.id] = (category, current + 1)
+            for line in entry.orderedLines {
+                guard let category = line.category, isEligible(category, kind: kind) else {
+                    continue
+                }
+
+                let current = counts[category.id]?.count ?? 0
+                counts[category.id] = (category, current + 1)
+            }
         }
 
         guard let top = counts.values.max(by: { $0.count < $1.count }), top.count >= 2 else {

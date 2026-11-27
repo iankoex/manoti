@@ -175,7 +175,7 @@ struct IngestServiceTests {
 
         #expect(outcome.status == .recorded)
         #expect(stored.status == .confirmed)
-        #expect(stored.category?.id == category.id)
+        #expect(stored.primaryCategory?.id == category.id)
         #expect(stored.account?.id == mobile.id)
     }
 

@@ -72,7 +72,7 @@ struct BudgetServiceTests {
             currencyCode: currencyCode,
             occurredAt: occurredAt
         )
-        entry.category = category
+        entry.attachSingleLine(category: category, in: context)
         entry.status = status
         entry.isSoftDeleted = isSoftDeleted
         context.insert(entry)

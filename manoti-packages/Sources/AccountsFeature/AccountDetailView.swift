@@ -197,6 +197,7 @@ public struct AccountDetailView: View {
                 kind: .adjustment,
                 amountMinor: delta,
                 account: account,
+                lines: [],
                 note: "Balance adjustment"
             )
         } catch {

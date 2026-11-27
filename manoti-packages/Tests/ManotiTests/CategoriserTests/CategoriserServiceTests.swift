@@ -76,7 +76,7 @@ struct CategoriserServiceTests {
     func amountBands() throws {
         let context = try makeContext()
         let categoriser = CategoriserService(context: context)
-        let lunch = try category("Lunch", in: context)
+        _ = try category("Lunch", in: context)
 
         let atMinimum = try categoriser.suggest(
             payee: "Cafe",
@@ -237,7 +237,9 @@ struct CategoriserServiceTests {
         context.insert(second)
         try context.save()
 
-        let suggestions = try categoriser.suggest(payee: "Shop", amountMinor: 10_000)
+        // A fixed 10:00 avoids the seeded meal and commute rules, which are time-of-day based.
+        let at = Calendar.current.date(bySettingHour: 10, minute: 0, second: 0, of: Date()) ?? Date()
+        let suggestions = try categoriser.suggest(payee: "Shop", amountMinor: 10_000, date: at)
         #expect(suggestions.contains { $0.category.id == lunch.id && $0.reason == "First" })
         #expect(!suggestions.contains { $0.category.id == transport.id })
     }
@@ -259,7 +261,16 @@ struct CategoriserServiceTests {
 
         try categoriser.openContext(merchant: "Uber", minutes: 60)
 
-        let suggestions = try categoriser.suggest(payee: "", amountMinor: 30_000, kind: .expense)
+        // A fixed 10:00 avoids the seeded meal and commute rules, which are time-of-day based.
+        let at = Calendar.current.date(bySettingHour: 10, minute: 0, second: 0, of: Date()) ?? Date()
+        let suggestions = try categoriser.suggest(
+            payee: "",
+            amountMinor: 30_000,
+            date: at,
+            contextMerchant: "Uber",
+            kind: .expense
+        )
+
         #expect(suggestions.contains { $0.category.id == rides.id })
     }
 

@@ -20,20 +20,17 @@ import WidgetKit
 /// and avoids querying the database from the widget process.
 nonisolated public struct WidgetSnapshot: Codable, Equatable, Sendable {
     public let updatedAt: Date
-    public let netWorthText: String
     public let monthSpendText: String
     public let safeToSpendText: String
     public let isPrivacyModeEnabled: Bool
 
     public init(
         updatedAt: Date,
-        netWorthText: String,
         monthSpendText: String,
         safeToSpendText: String,
         isPrivacyModeEnabled: Bool
     ) {
         self.updatedAt = updatedAt
-        self.netWorthText = netWorthText
         self.monthSpendText = monthSpendText
         self.safeToSpendText = safeToSpendText
         self.isPrivacyModeEnabled = isPrivacyModeEnabled
@@ -66,13 +63,6 @@ nonisolated public final class WidgetSnapshotService: Loggable {
         let calendar = Calendar.current
         let displayCurrency = appService.displayCurrency
         let hidden = appService.privacyModeEnabled
-        let allAccounts = try accounts.fetchAccounts()
-        let netWorth = try insights.netWorth(
-            accounts: allAccounts,
-            displayCurrency: displayCurrency,
-            asOf: now
-        )
-
         let month = BudgetPeriodKind.month.dateInterval(containing: now, calendar: calendar)
         let monthSpend = try insights.total(
             kind: .expense,
@@ -85,7 +75,6 @@ nonisolated public final class WidgetSnapshotService: Loggable {
 
         return WidgetSnapshot(
             updatedAt: now,
-            netWorthText: text(netWorth.amount, hidden: hidden),
             monthSpendText: text(monthSpend.amount, hidden: hidden),
             safeToSpendText: safeToSpend.map { text($0, hidden: hidden) } ?? "—",
             isPrivacyModeEnabled: hidden
@@ -105,7 +94,6 @@ nonisolated public final class WidgetSnapshotService: Loggable {
             if appService.privacyModeEnabled {
                 let masked = WidgetSnapshot(
                     updatedAt: now,
-                    netWorthText: Self.AmountMaskPlaceholder,
                     monthSpendText: Self.AmountMaskPlaceholder,
                     safeToSpendText: Self.AmountMaskPlaceholder,
                     isPrivacyModeEnabled: true

@@ -142,6 +142,7 @@ struct LedgerServiceTests {
         let replacement = try fixtures.accounts.create(name: "Bank", kind: .bank)
         let food = makeCategory("Food", in: fixtures.context)
         let transport = makeCategory("Transport", in: fixtures.context)
+        transport.kind = .income
         let occurredAt = Date(timeIntervalSince1970: 1_000)
         let createdAt = Date(timeIntervalSince1970: 10)
 
@@ -182,7 +183,7 @@ struct LedgerServiceTests {
         #expect(entry.feeMinor == 250)
         #expect(entry.account?.id == replacement.id)
         #expect(entry.currencyCode == replacement.currencyCode)
-        #expect(entry.category?.id == transport.id)
+        #expect(entry.primaryCategory?.id == transport.id)
         #expect(entry.payee == "New payee")
         #expect(entry.note == "New note")
         #expect(entry.occurredAt == occurredAt)

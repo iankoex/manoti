@@ -5,38 +5,41 @@
 
 import Foundation
 
-/// Shared key handling for the custom numeric keypad.
+/// Helpers for free-typed amount fields.
 nonisolated public enum AmountEntry {
-    /// Applies one key to an editable major-unit string, allowing one decimal point and at
-    /// most `exponent` decimal places.
-    public static func apply(_ key: String, to text: inout String, exponent: Int = 2) {
-        if key == "⌫" {
-            if !text.isEmpty {
-                text.removeLast()
-            }
-            return
-        }
+    /// Keeps a free-typed amount numeric: digits, one decimal separator and, when allowed,
+    /// a leading minus. Hardware keyboards and paste can otherwise put letters in a field.
+    public static func sanitisedText(
+        _ raw: String,
+        exponent: Int,
+        allowsNegative: Bool = false
+    ) -> String {
+        var integer = ""
+        var fraction = ""
+        var sawSeparator = false
 
-        if key == "." {
-            guard exponent > 0, !text.contains(".") else {
-                return
-            }
-
-            text += text.isEmpty ? "0." : "."
-            return
-        }
-
-        if let dotIndex = text.firstIndex(of: ".") {
-            let decimals = text.distance(from: dotIndex, to: text.endIndex) - 1
-            guard decimals < max(0, exponent) else {
-                return
+        for character in raw {
+            if character.isNumber {
+                if sawSeparator {
+                    fraction.append(character)
+                } else {
+                    integer.append(character)
+                }
+            } else if (character == "." || character == ","), exponent > 0, !sawSeparator {
+                sawSeparator = true
             }
         }
 
-        if text == "0" {
-            text = key
-        } else {
-            text += key
+        var result = integer
+
+        if sawSeparator {
+            result = (integer.isEmpty ? "0" : integer) + "." + String(fraction.prefix(exponent))
         }
+
+        if allowsNegative, raw.trimmingCharacters(in: .whitespaces).hasPrefix("-") {
+            result = "-" + result
+        }
+
+        return result
     }
 }

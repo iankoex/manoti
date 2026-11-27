@@ -11,12 +11,6 @@ import Observation
 @MainActor
 @Observable
 public final class TransferFormState {
-    public enum AmountField: Hashable {
-        case amount
-        case fee
-        case received
-    }
-
     public var fromID: UUID? {
         didSet {
             if oldValue != fromID {
@@ -34,7 +28,6 @@ public final class TransferFormState {
     public var amountText = ""
     public var receivedText = ""
     public var feeText = ""
-    public var activeField: AmountField = .amount
     public var note = ""
     public var occurredAt = Date.now
     public var showsDetails = false
@@ -139,21 +132,6 @@ public final class TransferFormState {
 
         if toAccount == nil || toAccount?.id == fromID {
             toID = availableTargets.first?.id
-        }
-    }
-
-    public func press(_ key: String) {
-        switch activeField {
-            case .amount:
-                AmountEntry.apply(key, to: &amountText)
-            case .fee:
-                AmountEntry.apply(key, to: &feeText)
-            case .received:
-                guard requiresConvertedAmount else {
-                    return
-                }
-
-                AmountEntry.apply(key, to: &receivedText)
         }
     }
 

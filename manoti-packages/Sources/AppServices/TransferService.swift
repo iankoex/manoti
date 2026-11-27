@@ -18,6 +18,7 @@ public enum TransferError: Error, Equatable {
     case alreadyLinked
     case wrongLegKinds
     case timeMismatch
+    case unsupportedEntry
 }
 
 extension TransferError: LocalizedError {
@@ -39,6 +40,8 @@ extension TransferError: LocalizedError {
                 return "Link one transfer out to one transfer in."
             case .timeMismatch:
                 return "The two entries are more than 15 minutes apart. Check the reference before linking them."
+            case .unsupportedEntry:
+                return "This entry can't become a transfer."
         }
     }
 }
@@ -151,6 +154,126 @@ public final class TransferService: Loggable {
         return transfer
     }
 
+    /// Turns an existing entry into one leg of a transfer and creates the other.
+    ///
+    /// The message-derived entry keeps its id, raw text, references and dedupe hash. An
+    /// expense or an unlinked out-leg becomes the out-leg; an income or an unlinked in-leg
+    /// becomes the in-leg. Lines are removed because a transfer has no categories or tags.
+    @discardableResult
+    public func convert(
+        entry: LedgerEntry,
+        source: Account,
+        destination: Account,
+        amountOutMinor: Int64,
+        amountInMinor: Int64?,
+        feeMinor: Int64,
+        occurredAt: Date,
+        payee: String,
+        note: String
+    ) throws -> Transfer {
+        guard !entry.isSoftDeleted else {
+            throw TransferError.unsupportedEntry
+        }
+
+        guard entry.transfer == nil, entry.loan == nil, entry.investmentCashFlow == nil else {
+            throw TransferError.alreadyLinked
+        }
+
+        let entryIsOut: Bool
+
+        switch entry.kind {
+            case .expense, .transferOut:
+                entryIsOut = true
+            case .income, .transferIn:
+                entryIsOut = false
+            default:
+                throw TransferError.unsupportedEntry
+        }
+
+        guard source.id != destination.id else {
+            throw TransferError.sameAccount
+        }
+
+        guard amountOutMinor > 0, feeMinor >= 0 else {
+            throw TransferError.invalidAmount
+        }
+
+        guard !source.isArchived, !destination.isArchived else {
+            throw TransferError.archivedAccount
+        }
+
+        let resolvedIn: Int64
+
+        if source.currency == destination.currency {
+            resolvedIn = amountInMinor ?? amountOutMinor
+            guard resolvedIn == amountOutMinor else {
+                throw TransferError.amountMismatch
+            }
+        } else {
+            guard let amountInMinor, amountInMinor > 0 else {
+                throw TransferError.amountInRequired
+            }
+
+            resolvedIn = amountInMinor
+        }
+
+        let trimmedPayee = payee.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        let entryAccount = entryIsOut ? source : destination
+        let entryAmount = entryIsOut ? amountOutMinor : resolvedIn
+        let entryFee = entryIsOut ? feeMinor : 0
+
+        let movedAnchor =
+            entry.account?.id != entryAccount.id
+            || entry.amountMinor != entryAmount
+            || entry.feeMinor != entryFee
+            || entry.currencyCode != entryAccount.currencyCode
+            || entry.occurredAt != occurredAt
+
+        for line in entry.lines ?? [] {
+            context.delete(line)
+        }
+
+        entry.lines = []
+        entry.kind = entryIsOut ? .transferOut : .transferIn
+        entry.account = entryAccount
+        entry.amountMinor = entryAmount
+        entry.feeMinor = entryFee
+        entry.currencyCode = entryAccount.currencyCode
+        entry.occurredAt = occurredAt
+        entry.payee = trimmedPayee
+        entry.note = trimmedNote
+        entry.status = .confirmed
+        entry.isConfirmationOnly = false
+
+        if movedAnchor {
+            entry.balanceAfterMinor = nil
+        }
+
+        let counterpartAccount = entryIsOut ? destination : source
+        let counterpart = LedgerEntry(
+            kind: entryIsOut ? .transferIn : .transferOut,
+            amountMinor: entryIsOut ? resolvedIn : amountOutMinor,
+            feeMinor: entryIsOut ? 0 : feeMinor,
+            currencyCode: counterpartAccount.currencyCode,
+            occurredAt: occurredAt,
+            payee: "",
+            note: trimmedNote,
+            source: .manual
+        )
+        counterpart.account = counterpartAccount
+        counterpart.status = .confirmed
+        context.insert(counterpart)
+
+        let transfer = try TransferLinker(context: context).link(
+            outLeg: entryIsOut ? entry : counterpart,
+            inLeg: entryIsOut ? counterpart : entry
+        )
+
+        ManotiNotifications.postDataChanged()
+        return transfer
+    }
+
     /// Transfer legs that do not yet belong to a `Transfer`.
     ///
     /// Review rows are included: the money has moved, so they should be pairable even while
@@ -199,7 +322,7 @@ public final class TransferService: Loggable {
                 continue
             }
 
-            guard difference <= TransferService.matchWindow,
+            guard difference <= TransferLinker.matchWindow,
                 amountMatches(outLeg: outLeg, inLeg: inLeg)
             else {
                 continue
@@ -238,50 +361,7 @@ public final class TransferService: Loggable {
 
     @discardableResult
     public func link(outLeg: LedgerEntry, inLeg: LedgerEntry) throws -> Transfer {
-        guard outLeg.kind == .transferOut, inLeg.kind == .transferIn else {
-            throw TransferError.wrongLegKinds
-        }
-
-        guard outLeg.transfer == nil, inLeg.transfer == nil else {
-            throw TransferError.alreadyLinked
-        }
-
-        guard let from = outLeg.account, let to = inLeg.account, from.id != to.id else {
-            throw TransferError.sameAccount
-        }
-
-        guard outLeg.isPosted, inLeg.isPosted, !from.isArchived, !to.isArchived else {
-            throw TransferError.archivedAccount
-        }
-
-        // A shared reference is strong enough to survive any delay. Without one, two legs
-        // this far apart are more likely a repeated transfer than the same movement.
-        if !referenceMatches(outLeg: outLeg, inLeg: inLeg),
-            abs(outLeg.occurredAt.timeIntervalSince(inLeg.occurredAt)) > TransferService.matchWindow
-        {
-            throw TransferError.timeMismatch
-        }
-
-        let occurredAt = min(outLeg.occurredAt, inLeg.occurredAt)
-        let transfer = Transfer(occurredAt: occurredAt)
-        transfer.fromAccount = from
-        transfer.toAccount = to
-        context.insert(transfer)
-
-        outLeg.transfer = transfer
-        inLeg.transfer = transfer
-
-        if from.currency != to.currency {
-            recordRate(
-                from: from,
-                to: to,
-                amountOutMinor: outLeg.amountMinor,
-                amountInMinor: inLeg.amountMinor,
-                at: occurredAt
-            )
-        }
-
-        try context.save()
+        let transfer = try TransferLinker(context: context).link(outLeg: outLeg, inLeg: inLeg)
         ManotiNotifications.postDataChanged()
         return transfer
     }
@@ -338,7 +418,6 @@ public final class TransferService: Loggable {
         }
     }
 
-    private static let matchWindow: TimeInterval = 15 * 60
     private static let amountTolerance = 0.01
 
     /// True when one leg names the other's reference, in either direction.

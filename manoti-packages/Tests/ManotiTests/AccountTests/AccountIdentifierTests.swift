@@ -132,6 +132,37 @@ struct AccountIdentifierTests {
         #expect(accounts.account(forIdentifier: "01234567890123") == nil)
     }
 
+    @Test("A phone routes in national and international form")
+    func phoneFormats() throws {
+        let accounts = try makeService()
+        let mobile = try accounts.create(name: "M-Pesa", kind: .mobileMoney)
+        let other = try accounts.create(name: "Other", kind: .mobileMoney)
+
+        try accounts.addIdentifier(value: "0700 000 000", type: .phone, to: mobile)
+
+        #expect(accounts.account(forIdentifier: "0700 000 000")?.id == mobile.id)
+        #expect(accounts.account(forIdentifier: "254700000000")?.id == mobile.id)
+        #expect(accounts.account(forIdentifier: "+254 700 000 000")?.id == mobile.id)
+        #expect(accounts.account(forIdentifier: "0700 000 001") == nil)
+
+        #expect(throws: AccountError.duplicateIdentifier) {
+            try accounts.addIdentifier(value: "254700000000", type: .phone, to: other)
+        }
+    }
+
+    @Test("A phone and an account number are not fuzzy-matched for uniqueness")
+    func phoneAndAccountNumberStayDistinct() throws {
+        let accounts = try makeService()
+        let bank = try accounts.create(name: "Bank", kind: .bank)
+        let mobile = try accounts.create(name: "M-Pesa", kind: .mobileMoney)
+
+        try accounts.addIdentifier(value: "0700 000 000", type: .phone, to: mobile)
+        try accounts.addIdentifier(value: "254700000000", type: .accountNumber, to: bank)
+
+        // They share the last nine digits, so routing cannot choose one.
+        #expect(accounts.account(forIdentifier: "254700000000") == nil)
+    }
+
     @Test("Archived accounts do not block reusing an identifier")
     func archivedAccountDoesNotBlockReuse() throws {
         let accounts = try makeService()

@@ -57,7 +57,7 @@ struct SharedRulesTests {
         let service = SharedRulesService(context: context, defaults: defaults)
 
         let first = try service.installBundledRulesIfNeeded()
-        #expect(first?.ruleCount == 3)
+        #expect(first?.ruleCount == 4)
 
         let second = try service.installBundledRulesIfNeeded()
         #expect(second == nil)
@@ -113,7 +113,7 @@ struct SharedRulesTests {
 
         let restored = try service.installBundledRulesIfNeeded()
 
-        #expect(restored?.ruleCount == 3)
+        #expect(restored?.ruleCount == 4)
     }
 
     @Test("A rule already covered by a user set is skipped, not duplicated")
@@ -140,7 +140,7 @@ struct SharedRulesTests {
             SharedRulesService.bundledData()
         )
 
-        #expect(result.ruleCount == 2)
+        #expect(result.ruleCount == 3)
         #expect(result.skippedCount == 1)
     }
 

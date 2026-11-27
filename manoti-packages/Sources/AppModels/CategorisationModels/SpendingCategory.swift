@@ -20,8 +20,8 @@ public final class SpendingCategory {
     public var kindRaw: String = CategoryKind.expense.rawValue
     public var group: CategoryGroup?
 
-    @Relationship(deleteRule: .nullify, inverse: \LedgerEntry.category)
-    public var transactions: [LedgerEntry]?
+    @Relationship(deleteRule: .nullify, inverse: \LedgerEntryLine.category)
+    public var transactionLines: [LedgerEntryLine]?
 
     @Relationship(deleteRule: .nullify, inverse: \MerchantMemory.category)
     public var merchantMemories: [MerchantMemory]?

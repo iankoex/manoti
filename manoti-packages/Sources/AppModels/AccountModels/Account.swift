@@ -11,6 +11,7 @@ public final class Account {
     public var id: UUID = UUID()
     public var name: String = ""
     public var kindRaw: String = AccountKind.bank.rawValue
+    public var ownershipRaw: String = AccountOwnership.personal.rawValue
     public var currencyCode: String = CurrencyCatalog.defaultCurrency.code
     public var colorHex: String = "#2F80ED"
     public var symbolName: String = "building.columns"
@@ -52,11 +53,13 @@ public final class Account {
         colorHex: String = "#2F80ED",
         symbolName: String = "building.columns",
         institution: String = "",
+        ownership: AccountOwnership = .personal,
         sortIndex: Int = 0
     ) {
         self.id = UUID()
         self.name = name
         self.kindRaw = kind.rawValue
+        self.ownershipRaw = ownership.rawValue
         self.currencyCode = currencyCode
         self.colorHex = colorHex
         self.symbolName = symbolName
@@ -69,6 +72,15 @@ public final class Account {
     public var kind: AccountKind {
         get { AccountKind(rawValue: kindRaw) ?? .bank }
         set { kindRaw = newValue.rawValue }
+    }
+
+    public var ownership: AccountOwnership {
+        get { AccountOwnership(rawValue: ownershipRaw) ?? .personal }
+        set { ownershipRaw = newValue.rawValue }
+    }
+
+    public var isCompany: Bool {
+        ownership == .company
     }
 
     public var currency: Currency {

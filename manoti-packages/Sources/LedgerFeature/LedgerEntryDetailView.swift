@@ -29,8 +29,22 @@ public struct LedgerEntryDetailView: View {
                 header
             }
 
+            if entry.orderedLines.count > 1 {
+                Section("Lines") {
+                    ForEach(entry.orderedLines) { line in
+                        lineRow(line)
+                    }
+                }
+            }
+
             Section("Details") {
                 facts
+            }
+
+            if !entry.confirmationRef.isEmpty || entry.isConfirmationOnly {
+                Section("Confirmation") {
+                    confirmation
+                }
             }
 
             if isLinked {
@@ -131,7 +145,7 @@ public struct LedgerEntryDetailView: View {
             }
         }
 
-        if let category = entry.category {
+        if entry.orderedLines.count <= 1, let category = entry.primaryCategory {
             LabeledContent("Category") {
                 factValue(
                     category.name,
@@ -141,8 +155,19 @@ public struct LedgerEntryDetailView: View {
             }
         }
 
+        if !entry.tagList.isEmpty {
+            LabeledContent("Tags") {
+                Text(entry.tagList.map(\.name).joined(separator: ", "))
+                    .multilineTextAlignment(.trailing)
+            }
+        }
+
         if !entry.payee.isEmpty {
             LabeledContent("Payee", value: entry.payee)
+        }
+
+        if !entry.channelName.isEmpty {
+            LabeledContent("Via", value: entry.channelName)
         }
 
         if !entry.note.isEmpty {
@@ -153,6 +178,68 @@ public struct LedgerEntryDetailView: View {
         }
 
         LabeledContent("Source", value: LedgerEntryPresentation.sourceName(for: entry.source))
+    }
+
+    @ViewBuilder
+    private var confirmation: some View {
+        if !entry.confirmationRef.isEmpty {
+            LabeledContent("Reference", value: entry.confirmationRef)
+        }
+
+        if !entry.confirmationSender.isEmpty {
+            LabeledContent("From", value: entry.confirmationSender)
+        }
+
+        if let confirmedAt = entry.confirmedAt {
+            LabeledContent(
+                "Received",
+                value: confirmedAt.formatted(.dateTime.day().month(.abbreviated).year().hour().minute())
+            )
+        }
+
+        if entry.isConfirmationOnly {
+            Text("The matching payment message has not arrived.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+
+        if !entry.confirmationText.isEmpty {
+            DisclosureGroup("Message text") {
+                Text(entry.confirmationText)
+                    .font(.caption)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    private func lineRow(_ line: LedgerEntryLine) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            AmountText(
+                Money(minorUnits: line.amountMinor, currency: entry.currency),
+                style: .subheadline.weight(.medium)
+            )
+
+            VStack(alignment: .leading, spacing: 2) {
+                if let category = line.category {
+                    Text(category.name)
+                        .font(.subheadline)
+                        .foregroundStyle(ManotiColor.forHex(category.colorHex))
+                } else {
+                    Text("Uncategorised")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !line.tagList.isEmpty {
+                    Text(line.tagList.map(\.name).joined(separator: ", "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 2)
     }
 
     /// A tinted icon plus its value, matching the account and category chips elsewhere.

@@ -377,6 +377,8 @@ struct ReconciliationServiceTests {
         #expect(entry.rawMessage == paid)
         #expect(entry.messageSender == "M-PESA")
         #expect(entry.note == "Imported from reconciliation")
+        #expect(entry.orderedLines.count == 1)
+        #expect(entry.orderedLines.first?.amountMinor == 151_000)
         #expect(message.classification == .imported)
         #expect(message.matchedEntryID == entry.id)
         #expect(!entry.dedupeHash.isEmpty)
@@ -659,7 +661,7 @@ struct ReconciliationServiceTests {
 
     @Test("Both reconcile models are in the schema and keep their inverse")
     func schemaAndInverse() throws {
-        #expect(ManotiSchema.models.count == 27)
+        #expect(ManotiSchema.models.count == 29)
         #expect(ManotiSchema.models.contains { $0 == ReconcileSession.self })
         #expect(ManotiSchema.models.contains { $0 == ReconcileMessage.self })
 

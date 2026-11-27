@@ -45,6 +45,10 @@ public struct LedgerEntryRowView: View {
                 }
 
                 subtitle
+
+                if !entry.tagList.isEmpty {
+                    tags
+                }
             }
         }
         .padding(.vertical, 2)
@@ -63,9 +67,23 @@ public struct LedgerEntryRowView: View {
                     .layoutPriority(2)
             }
 
-            if let category = entry.category, !entry.payee.isEmpty {
+            if !entry.channelName.isEmpty {
+                separator
+                Text("via \(entry.channelName)")
+            }
+
+            if let category = entry.primaryCategory, !entry.payee.isEmpty {
                 separator
                 categoryLabel(category)
+            }
+
+            if entry.orderedLines.count > 1 {
+                separator
+                Text("Split")
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(.quaternary.opacity(0.5), in: .capsule)
             }
 
             Spacer(minLength: 4)
@@ -114,6 +132,32 @@ public struct LedgerEntryRowView: View {
             Text(account.displayName)
                 .lineLimit(1)
         }
+    }
+
+    private var tags: some View {
+        HStack(spacing: 4) {
+            ForEach(entry.tagList.prefix(2)) { tag in
+                let tint = ManotiColor.forHex(tag.colorHex)
+
+                HStack(spacing: 3) {
+                    Image(systemName: tag.symbolName)
+                        .font(.system(size: 8, weight: .semibold))
+
+                    Text(tag.name)
+                        .lineLimit(1)
+                }
+                .foregroundStyle(tint)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(tint.opacity(0.12), in: .capsule)
+            }
+
+            if entry.tagList.count > 2 {
+                Text("+\(entry.tagList.count - 2)")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.caption2)
     }
 
     private func categoryLabel(_ category: SpendingCategory) -> some View {

@@ -12,6 +12,11 @@ struct AccountRowView: View {
 
     @Environment(\.manotiAmountsHidden) private var amountsHidden
 
+    private var subtitle: String {
+        let base = "\(account.kind.displayName) · \(account.currency.code)"
+        return account.isCompany ? "\(base) · Company" : base
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: account.symbolName)
@@ -25,7 +30,7 @@ struct AccountRowView: View {
                 Text(account.displayName)
                     .font(.body.weight(.medium))
 
-                Text("\(account.kind.displayName) · \(account.currency.code)")
+                Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

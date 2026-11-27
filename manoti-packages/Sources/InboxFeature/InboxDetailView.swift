@@ -15,14 +15,18 @@ struct InboxDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AccountService.self) private var accountService
     @Environment(CategoryService.self) private var categoryService
+    @Environment(TagService.self) private var tagService
     @Environment(LedgerService.self) private var ledgerService
     @Environment(InboxService.self) private var inboxService
+    @Environment(TransferService.self) private var transferService
     @Environment(\.manotiAmountsHidden) private var amountsHidden
 
     @State private var state: EntryFormState
     @State private var alwaysFile = false
+    @State private var splitTemplate: SplitTemplate?
     @State private var possibleDuplicate: LedgerEntry?
     @State private var isConfirmingIgnore = false
+    @State private var isConfirmingConversion = false
     @State private var errorMessage: String?
 
     init(entry: LedgerEntry) {
@@ -32,7 +36,7 @@ struct InboxDetailView: View {
 
     var body: some View {
         NavigationStack {
-            EntryFormView(state: state, showsKindControl: true) {
+            EntryFormView(state: state, showsKindControl: true, splitTemplate: splitTemplate) {
                 footer
             }
             .navigationTitle("Review")
@@ -69,7 +73,17 @@ struct InboxDetailView: View {
                 Button("I recorded it elsewhere") { ignore(.duplicate) }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("Manoti remembers this message shape so it needs less attention next time.")
+                Text("Manoti remembers this message pattern so it needs less attention next time.")
+            }
+            .confirmationDialog(
+                "Turn this entry into a transfer?",
+                isPresented: $isConfirmingConversion,
+                titleVisibility: .visible
+            ) {
+                Button("Convert to transfer", role: .destructive) { performConfirm() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The split lines and tags on this entry will be removed. A transfer has no categories.")
             }
         }
     }
@@ -108,7 +122,7 @@ struct InboxDetailView: View {
             }
         }
 
-        if !entry.payee.isEmpty {
+        if !entry.payee.isEmpty, !state.isSplit, !state.isTransferForm {
             Toggle(isOn: $alwaysFile) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Always file this merchant here")
@@ -132,7 +146,7 @@ struct InboxDetailView: View {
     }
 
     private func load() {
-        state.reload(accountService: accountService, categoryService: categoryService)
+        state.reload(accountService: accountService, categoryService: categoryService, tagService: tagService)
         let suggestions = (try? inboxService.suggestions(for: entry)) ?? []
         state.applySuggestion(suggestions.first)
 
@@ -143,11 +157,27 @@ struct InboxDetailView: View {
         }
 
         alwaysFile = inboxService.autoApply(for: entry.payee)
+        splitTemplate = try? inboxService.splitTemplate(for: entry)
         possibleDuplicate = inboxService.possibleDuplicate(of: entry)
     }
 
     private func confirm() {
+        if state.conversionDropsSplitOrTags {
+            isConfirmingConversion = true
+            return
+        }
+
+        performConfirm()
+    }
+
+    private func performConfirm() {
         do {
+            if state.convertsToTransfer {
+                _ = try state.save(ledger: ledgerService, transfer: transferService)
+                dismiss()
+                return
+            }
+
             // Apply the edited fields first, then confirm so the status flips and the
             // merchant/category learning is recorded.
             try state.save(ledger: ledgerService)

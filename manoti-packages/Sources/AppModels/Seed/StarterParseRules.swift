@@ -8,6 +8,7 @@ import Foundation
 nonisolated public struct SeedParseRule: Sendable {
     public let name: String
     public let messageType: LedgerEntryKind
+    public let role: MessageRole
     public let pattern: String
     public let fieldPatterns: [String: String]
     public let sampleText: String
@@ -15,12 +16,14 @@ nonisolated public struct SeedParseRule: Sendable {
     public init(
         name: String,
         messageType: LedgerEntryKind,
+        role: MessageRole = .transaction,
         pattern: String,
         fieldPatterns: [String: String] = [:],
         sampleText: String = ""
     ) {
         self.name = name
         self.messageType = messageType
+        self.role = role
         self.pattern = pattern
         self.fieldPatterns = fieldPatterns
         self.sampleText = sampleText
@@ -101,7 +104,10 @@ public enum StarterParseRules {
                     name: "Bank to mobile money transfer",
                     messageType: .transferOut,
                     pattern: #"BANK TO M-PESA TRANSFER OF\s+"# + amount
-                        + #"\s+TO\s+(?<payee>.+?)\s+SUCCESSFULLY PROCESSED\.?\s*TRANSACTION REF ID:\s*(?<ref>[A-Z0-9]+)\.?\s*M-PESA REF ID:\s*(?<counterpart>[A-Z0-9]+)"#
+                        + #"\s+TO\s+(?<payee>.+?)\s+SUCCESSFULLY PROCESSED\.?\s*TRANSACTION REF ID:\s*(?<ref>[A-Z0-9]+)\.?\s*M-PESA REF ID:\s*(?<counterpart>[A-Z0-9]+)"#,
+                    // The destination wallet. Routing ignores this for a transfer-out, but
+                    // ingest uses it to recognise the user's own M-PESA account.
+                    fieldPatterns: ["account": #"TO\s+(?<account>\d{9,15})"#]
                 ),
                 SeedParseRule(
                     name: "Transfer to own account",

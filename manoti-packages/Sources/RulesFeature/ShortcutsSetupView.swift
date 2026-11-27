@@ -106,6 +106,13 @@ struct ShortcutsSetupView: View {
                             "Send yourself a message from that sender, then open Manoti → Inbox. The entry should be waiting."
                     )
 
+                    Text(
+                        "A bank receipt for a payment may name neither M-PESA nor KES. Add the bank's sender, or a phrase every receipt contains such as “has been received”, so the receipt reaches Manoti and can name the merchant."
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
                     Divider()
 
                     Text("Collect the whole day in one run")

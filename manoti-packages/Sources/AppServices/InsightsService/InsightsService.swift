@@ -9,16 +9,6 @@ import Foundation
 import Observation
 import SwiftData
 
-nonisolated public struct NetWorth: Equatable, Sendable {
-    public let amount: Money
-    public let missingRates: [String]
-
-    public init(amount: Money, missingRates: [String]) {
-        self.amount = amount
-        self.missingRates = missingRates
-    }
-}
-
 /// A period total in the display currency, plus any currencies that had no rate and were
 /// therefore shown 1:1 in major units.
 nonisolated public struct PeriodTotal: Equatable, Sendable {
@@ -64,84 +54,18 @@ nonisolated public final class InsightsService: Loggable {
         return ExchangeRateBook(records: records)
     }
 
-    public func netWorth(
-        accounts: [Account],
-        displayCurrency: Currency,
-        asOf today: Date = Date()
-    ) throws -> NetWorth {
-        let book = try rateBook()
-        var total: Int64 = 0
-        var missing: Set<String> = []
-
-        for account in accounts {
-            let balance = account.balance
-
-            if let converted = book.convert(balance, to: displayCurrency, on: today) {
-                total += converted.minorUnits
-            } else {
-                missing.insert(account.currency.code)
-                total += fallback(balance, to: displayCurrency).minorUnits
-            }
-        }
-
-        let loanDescriptor = FetchDescriptor<Loan>(
-            predicate: #Predicate<Loan> { !$0.isSoftDeleted && $0.statusRaw == "open" }
-        )
-
-        for loan in try context.fetch(loanDescriptor) {
-            let outstanding = loan.outstanding
-            guard !outstanding.isZero else {
-                continue
-            }
-
-            let converted: Money
-            if let value = book.convert(outstanding, to: displayCurrency, on: today) {
-                converted = value
-            } else {
-                missing.insert(loan.currency.code)
-                converted = fallback(outstanding, to: displayCurrency)
-            }
-
-            switch loan.direction {
-                case .lent:
-                    total += converted.minorUnits
-                case .borrowed:
-                    total -= converted.minorUnits
-            }
-        }
-
-        let investmentDescriptor = FetchDescriptor<Investment>(
-            predicate: #Predicate<Investment> { !$0.isSoftDeleted && $0.statusRaw == "active" }
-        )
-
-        for investment in try context.fetch(investmentDescriptor) {
-            let value = Money(
-                minorUnits: investment.currentValueMinor(asOf: today),
-                currency: investment.currency
-            )
-            guard !value.isZero else {
-                continue
-            }
-
-            if let converted = book.convert(value, to: displayCurrency, on: today) {
-                total += converted.minorUnits
-            } else {
-                missing.insert(value.currency.code)
-                total += fallback(value, to: displayCurrency).minorUnits
-            }
-        }
-
-        return NetWorth(
-            amount: Money(minorUnits: total, currency: displayCurrency),
-            missingRates: missing.sorted()
-        )
+    /// Personal reports ignore company money. Entries without an account (still in review)
+    /// count as personal but are excluded by status anyway.
+    func includes(_ entry: LedgerEntry, in scope: AccountOwnershipScope) -> Bool {
+        scope == .all || entry.account?.isCompany != true
     }
 
     public func total(
         kind: LedgerEntryKind,
         from start: Date,
         to end: Date,
-        displayCurrency: Currency
+        displayCurrency: Currency,
+        ownership: AccountOwnershipScope = .personal
     ) throws -> PeriodTotal {
         let book = try rateBook()
         let descriptor = FetchDescriptor<LedgerEntry>(
@@ -157,7 +81,7 @@ nonisolated public final class InsightsService: Loggable {
 
         for entry in entries
         where entry.kind == kind && entry.transfer == nil && entry.loan == nil
-            && entry.investmentCashFlow == nil
+            && entry.investmentCashFlow == nil && includes(entry, in: ownership)
         {
             let amount = Money(minorUnits: abs(entry.signedAmountMinor), currency: entry.currency)
 
@@ -180,7 +104,8 @@ nonisolated public final class InsightsService: Loggable {
         days: Int,
         displayCurrency: Currency,
         calendar: Calendar = .current,
-        now: Date = Date()
+        now: Date = Date(),
+        ownership: AccountOwnershipScope = .personal
     ) throws -> [DailySpend] {
         let bucketCount = max(1, days)
         let startOfToday = calendar.startOfDay(for: now)
@@ -200,7 +125,9 @@ nonisolated public final class InsightsService: Loggable {
         var missingByDay: [Date: Set<String>] = [:]
 
         for entry in try context.fetch(descriptor)
-        where entry.transfer == nil && entry.loan == nil && entry.investmentCashFlow == nil {
+        where entry.transfer == nil && entry.loan == nil && entry.investmentCashFlow == nil
+            && includes(entry, in: ownership)
+        {
             let amount = Money(minorUnits: abs(entry.signedAmountMinor), currency: entry.currency)
             let day = calendar.startOfDay(for: entry.occurredAt)
 

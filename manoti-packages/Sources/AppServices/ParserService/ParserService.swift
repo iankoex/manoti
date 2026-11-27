@@ -129,6 +129,7 @@ nonisolated public final class ParserService: Loggable {
             ruleSetName: ruleSet.name,
             ruleName: rule.name,
             messageType: rule.messageType,
+            role: rule.role,
             amountMinor: amount.money.minorUnits,
             currencyCode: currency.code,
             feeMinor: feeMinor,

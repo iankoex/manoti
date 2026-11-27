@@ -62,12 +62,22 @@ public struct AccountsView: View {
 
     private var accountList: some View {
         List {
-            Section {
-                ForEach(activeAccounts) { account in
-                    NavigationLink {
-                        AccountDetailView(account: account)
-                    } label: {
-                        AccountRowView(account: account)
+            if companyAccounts.isEmpty {
+                Section {
+                    ForEach(activeAccounts) { account in
+                        accountRow(account)
+                    }
+                }
+            } else {
+                Section("Personal") {
+                    ForEach(personalAccounts) { account in
+                        accountRow(account)
+                    }
+                }
+
+                Section("Company") {
+                    ForEach(companyAccounts) { account in
+                        accountRow(account)
                     }
                 }
             }
@@ -83,8 +93,24 @@ public struct AccountsView: View {
         }
     }
 
+    private func accountRow(_ account: Account) -> some View {
+        NavigationLink {
+            AccountDetailView(account: account)
+        } label: {
+            AccountRowView(account: account)
+        }
+    }
+
     private var activeAccounts: [Account] {
         accounts.filter { !$0.isArchived }
+    }
+
+    private var personalAccounts: [Account] {
+        activeAccounts.filter { !$0.isCompany }
+    }
+
+    private var companyAccounts: [Account] {
+        activeAccounts.filter(\.isCompany)
     }
 
     private var archivedAccounts: [Account] {

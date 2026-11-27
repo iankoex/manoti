@@ -23,6 +23,9 @@ public final class MerchantMemory {
     /// explicit choice.
     public var categoryCountsJSON: String = ""
 
+    /// The last manual split for this merchant, JSON-encoded. Empty when there is none.
+    public var splitTemplateJSON: String = ""
+
     @Relationship(deleteRule: .cascade, inverse: \MerchantAlias.merchantMemory)
     public var aliases: [MerchantAlias]?
 
@@ -61,6 +64,11 @@ public final class MerchantMemory {
 
             categoryCountsJSON = json
         }
+    }
+
+    public var splitTemplate: SplitTemplate? {
+        get { SplitTemplate(encoded: splitTemplateJSON) }
+        set { splitTemplateJSON = newValue?.encoded ?? "" }
     }
 
     /// Records one filing under a category and returns that category's new count.

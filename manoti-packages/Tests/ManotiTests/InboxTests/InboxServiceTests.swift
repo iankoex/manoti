@@ -171,7 +171,7 @@ struct InboxServiceTests {
         #expect(entry.amountMinor == 25_000)
         #expect(entry.payee == "Shell Bellevue")
         #expect(entry.status == .confirmed)
-        #expect(entry.category?.id == category.id)
+        #expect(entry.primaryCategory?.id == category.id)
 
         let memories = try context.fetch(FetchDescriptor<MerchantMemory>())
         #expect(memories.first?.category?.id == category.id)
@@ -228,7 +228,26 @@ struct InboxServiceTests {
         #expect(try context.fetchCount(FetchDescriptor<UnparsedMessage>()) == 1)
     }
 
-    @Test("Ignoring remembers the message shape and Undo forgets it")
+    @Test("Clearing unreadable messages deletes visible and dismissed rows")
+    func clearUnparsedMessages() throws {
+        let (inbox, context) = try makeServices()
+        let visible = UnparsedMessage(rawText: "Good morning", sender: "M-PESA")
+        let dismissed = UnparsedMessage(rawText: "Your balance is", sender: "M-PESA")
+        dismissed.isDismissed = true
+        context.insert(visible)
+        context.insert(dismissed)
+        try context.save()
+
+        #expect(try inbox.unparsed().count == 1)
+
+        let deleted = try inbox.deleteAllUnparsed()
+
+        #expect(deleted == 2)
+        #expect(try inbox.unparsed().isEmpty)
+        #expect(try context.fetchCount(FetchDescriptor<UnparsedMessage>()) == 0)
+    }
+
+    @Test("Ignoring remembers the message pattern and Undo forgets it")
     func ignoreRemembersShape() throws {
         let (inbox, context) = try makeServices()
         let entry = pendingEntry(kind: .expense, payee: "Shell", in: context)
@@ -249,6 +268,58 @@ struct InboxServiceTests {
 
         #expect(entry.status == .needsReview)
         #expect(try inbox.memories().isEmpty)
+    }
+
+    @Test("Deleting an auto-ignored row keeps the learned pattern")
+    func deleteAutoIgnoredKeepsShape() throws {
+        let (inbox, context) = try makeServices()
+        let entry = pendingEntry(kind: .expense, payee: "Shell", in: context)
+        entry.messageSender = "M-PESA"
+        entry.ingestFingerprint = TemplateFingerprint.make(
+            sender: "M-PESA",
+            text: "Paid Ksh 100 to Shell"
+        )
+        try context.save()
+
+        try inbox.ignore(entry, reason: .notATransaction)
+        #expect(try inbox.autoIgnored().count == 1)
+        #expect(try inbox.memories().count == 1)
+
+        try inbox.deleteAutoIgnored(entry)
+
+        #expect(try inbox.autoIgnored().isEmpty)
+        #expect(try context.fetchCount(FetchDescriptor<LedgerEntry>()) == 0)
+        #expect(try inbox.memories().count == 1)
+    }
+
+    @Test("Clearing auto-ignored removes only ignored message rows")
+    func clearAutoIgnoredRows() throws {
+        let (inbox, context) = try makeServices()
+        let first = pendingEntry(kind: .expense, payee: "First", in: context)
+        let second = pendingEntry(kind: .income, payee: "Second", in: context)
+        let pending = pendingEntry(kind: .expense, payee: "Still pending", in: context)
+
+        let manualIgnored = LedgerEntry(
+            kind: .expense,
+            amountMinor: 5_000,
+            payee: "Manual",
+            source: .manual
+        )
+        manualIgnored.status = .ignored
+        context.insert(manualIgnored)
+        try context.save()
+
+        try inbox.ignore(first)
+        try inbox.ignore(second)
+
+        #expect(try inbox.autoIgnored().count == 2)
+
+        let deleted = try inbox.deleteAllAutoIgnored()
+
+        #expect(deleted == 2)
+        #expect(try inbox.autoIgnored().isEmpty)
+        #expect(try inbox.pending().map(\.id) == [pending.id])
+        #expect(try context.fetchCount(FetchDescriptor<LedgerEntry>()) == 2)
     }
 
     @Test("A same-amount entry minutes apart is a proposal, not a link")

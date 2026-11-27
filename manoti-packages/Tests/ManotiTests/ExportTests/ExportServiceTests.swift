@@ -214,7 +214,7 @@ struct ExportServiceTests {
             source: .message
         )
         expense.account = account
-        expense.category = category
+        expense.attachSingleLine(category: category, in: context)
         expense.externalRef = "REF-1"
         expense.counterpartRef = "CP-1"
         expense.rawMessage = "Confirmed. Ksh1,510.00 paid to Nixomb Limited - Shell Bellevue."
@@ -519,7 +519,7 @@ struct ExportServiceTests {
             try target.fetch(FetchDescriptor<LedgerEntry>()).first { $0.id == fixture.expense.id }
         )
         #expect(expense.account?.id == fixture.account.id)
-        #expect(expense.category?.id == fixture.category.id)
+        #expect(expense.primaryCategory?.id == fixture.category.id)
         #expect(expense.amountMinor == 151_000)
         #expect(expense.feeMinor == 830)
         #expect(expense.payee == "Shell, \"Bellevue\"")
@@ -876,7 +876,7 @@ struct ExportServiceTests {
             try target.fetch(FetchDescriptor<LedgerEntry>()).first { $0.id == fixture.expense.id }
         )
         #expect(expense.account == nil)
-        #expect(expense.category?.id == fixture.category.id)
+        #expect(expense.primaryCategory?.id == fixture.category.id)
         #expect(summary.skipped == 1)
     }
 
@@ -905,7 +905,7 @@ struct ExportServiceTests {
             source: .message
         )
         newer.account = account
-        newer.category = category
+        newer.attachSingleLine(category: category, in: context)
         newer.externalRef = "EXT-1"
         newer.counterpartRef = "CP-1"
         newer.isSoftDeleted = true
@@ -940,7 +940,7 @@ struct ExportServiceTests {
 
         #expect(
             lines[0]
-                == "id,date,kind,amount,fee,currency,account,category,payee,note,source,status,externalRef,counterpartRef,transferID,loanID,investmentID,deleted"
+                == "id,date,kind,amount,fee,currency,account,category,tags,payee,note,source,status,externalRef,counterpartRef,transferID,loanID,investmentID,deleted"
         )
         #expect(lines.count == 4)
         #expect(lines[1].hasPrefix(newer.id.uuidString))

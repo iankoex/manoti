@@ -11,6 +11,8 @@ public final class ParseRule {
     public var id: UUID = UUID()
     public var name: String = ""
     public var messageTypeRaw: String = LedgerEntryKind.expense.rawValue
+    /// Whether this rule records a movement or confirms one another message records.
+    public var roleRaw: String = MessageRole.transaction.rawValue
     /// Full classification regex with named groups.
     public var pattern: String = ""
     /// JSON object of extra field name → regex, for optional clauses such as fee or balance.
@@ -23,6 +25,7 @@ public final class ParseRule {
     public init(
         name: String,
         messageType: LedgerEntryKind,
+        role: MessageRole = .transaction,
         pattern: String,
         fieldPatterns: [String: String] = [:],
         priority: Int = 0,
@@ -31,6 +34,7 @@ public final class ParseRule {
         self.id = UUID()
         self.name = name
         self.messageTypeRaw = messageType.rawValue
+        self.roleRaw = role.rawValue
         self.pattern = pattern
         self.fieldPatternsJSON = Self.encode(fieldPatterns)
         self.priority = priority
@@ -40,6 +44,11 @@ public final class ParseRule {
     public var messageType: LedgerEntryKind {
         get { LedgerEntryKind(rawValue: messageTypeRaw) ?? .expense }
         set { messageTypeRaw = newValue.rawValue }
+    }
+
+    public var role: MessageRole {
+        get { MessageRole(rawValue: roleRaw) ?? .transaction }
+        set { roleRaw = newValue.rawValue }
     }
 
     public var fieldPatterns: [String: String] {

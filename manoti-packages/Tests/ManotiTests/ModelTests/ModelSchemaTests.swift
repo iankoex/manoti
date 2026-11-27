@@ -29,7 +29,10 @@ struct ModelSchemaTests {
 
         let transaction = LedgerEntry(kind: .expense, amountMinor: 10_000, payee: "Cafe")
         transaction.account = account
-        transaction.category = category
+        let line = LedgerEntryLine(amountMinor: 10_000, category: category)
+        context.insert(line)
+        line.entry = transaction
+        transaction.lines = [line]
         context.insert(transaction)
 
         try context.save()
@@ -37,7 +40,7 @@ struct ModelSchemaTests {
         let accounts = try context.fetch(FetchDescriptor<Account>())
         #expect(accounts.count == 1)
         #expect(accounts.first?.transactions?.count == 1)
-        #expect(accounts.first?.transactions?.first?.category?.name == "Lunch")
+        #expect(accounts.first?.transactions?.first?.primaryCategory?.name == "Lunch")
         #expect(group.categories?.count == 1)
     }
 
@@ -71,6 +74,8 @@ struct ModelSchemaTests {
             ReconcileSession.self,
             ReconcileMessage.self,
             UnparsedMessage.self,
+            LedgerEntryLine.self,
+            Tag.self,
         ]
 
         #expect(ManotiSchema.models.count == expected.count)

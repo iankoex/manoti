@@ -10,6 +10,7 @@ import Modifiers
 import ReconcileFeature
 import RulesFeature
 import SwiftUI
+import TagsFeature
 
 public struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -18,6 +19,7 @@ public struct SettingsView: View {
     @Environment(NotificationService.self) private var notificationService
     @Environment(ExchangeRateService.self) private var exchangeRates
     @Environment(CategoryService.self) private var categoryService
+    @Environment(TagService.self) private var tagService
     @Environment(ReconciliationService.self) private var reconciliationService
     @Environment(ExportService.self) private var exportService
     @Environment(ICloudStatusService.self) private var iCloudStatus
@@ -25,6 +27,7 @@ public struct SettingsView: View {
 
     @State private var rateCount = 0
     @State private var categoryCount = 0
+    @State private var tagCount = 0
     @State private var reconcileValue = "No sessions yet"
     @State private var lastBackupAt: Date?
     @State private var largeThresholdText = ""
@@ -99,6 +102,17 @@ public struct SettingsView: View {
                     Label("Categories", systemImage: "square.grid.2x2")
                     Spacer()
                     Text(categoryCount == 1 ? "1 category" : "\(categoryCount) categories")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            NavigationLink {
+                TagsView()
+            } label: {
+                HStack {
+                    Label("Tags", systemImage: "tag")
+                    Spacer()
+                    Text(tagCount == 1 ? "1 tag" : "\(tagCount) tags")
                         .foregroundStyle(.secondary)
                 }
             }
@@ -667,6 +681,7 @@ public struct SettingsView: View {
     private func reload() {
         rateCount = (try? exchangeRates.latestRates())?.count ?? 0
         categoryCount = (try? categoryService.fetchCategories())?.count ?? 0
+        tagCount = (try? tagService.fetchTags(includeClosed: true))?.count ?? 0
         reconcileValue = latestSessionValue()
         lastBackupAt = exportService.lastBackupAt()
         largeThresholdText = thresholdText

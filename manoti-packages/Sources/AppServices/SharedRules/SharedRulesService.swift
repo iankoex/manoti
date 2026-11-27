@@ -22,6 +22,8 @@ nonisolated public struct SharedRule: Decodable, Sendable {
     public let key: String
     public let name: String
     public let type: String
+    /// Absent in version 1 files and defaults to a transaction.
+    public let role: String?
     public let pattern: String
     public let fieldPatterns: [String: String]?
     public let sample: String?
@@ -71,7 +73,7 @@ nonisolated public enum SharedRulesError: LocalizedError, Equatable {
 public final class SharedRulesService: Loggable {
     public static let ruleSetName = "Updates"
     public static let ruleSetSeedKey = "remote"
-    public static let supportedVersion = 1
+    public static let supportedVersion = 2
     public static let revisionKey = "manoti.rulesRevision"
 
     private static let maximumBytes = 256 * 1024
@@ -184,6 +186,7 @@ public final class SharedRulesService: Loggable {
     private struct ValidatedRule {
         let name: String
         let type: LedgerEntryKind
+        let role: MessageRole
         let pattern: String
         let fieldPatterns: [String: String]
         let sampleText: String
@@ -203,6 +206,19 @@ public final class SharedRulesService: Loggable {
 
         guard let type = LedgerEntryKind(rawValue: rule.type) else {
             throw SharedRulesError.invalidRule("“\(name)” has an unknown type “\(rule.type)”")
+        }
+
+        let role: MessageRole
+        if let roleName = rule.role {
+            guard let parsed = MessageRole(rawValue: roleName) else {
+                throw SharedRulesError.invalidRule(
+                    "“\(name)” has an unknown role “\(roleName)”"
+                )
+            }
+
+            role = parsed
+        } else {
+            role = .transaction
         }
 
         guard rule.pattern.count <= Self.maximumPatternLength else {
@@ -240,6 +256,7 @@ public final class SharedRulesService: Loggable {
         return ValidatedRule(
             name: name,
             type: type,
+            role: role,
             pattern: rule.pattern,
             fieldPatterns: fieldPatterns,
             sampleText: rule.sample ?? ""
@@ -290,6 +307,7 @@ public final class SharedRulesService: Loggable {
             let model = ParseRule(
                 name: rule.name,
                 messageType: rule.type,
+                role: rule.role,
                 pattern: rule.pattern,
                 fieldPatterns: rule.fieldPatterns,
                 priority: index,

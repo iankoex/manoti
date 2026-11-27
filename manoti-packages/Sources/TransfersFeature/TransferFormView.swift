@@ -7,12 +7,19 @@ import AppModels
 import Modifiers
 import SwiftUI
 
+private enum TransferField: Hashable {
+    case amount
+    case fee
+    case received
+    case note
+}
+
 /// Transfer form laid out like the expense and income forms: amount first, account chips,
-/// then an optional details section and the shared custom keypad.
+/// then an optional details section. The system numeric keyboard edits the field in focus.
 public struct TransferFormView: View {
     @Bindable private var state: TransferFormState
     @Environment(\.manotiAmountsHidden) private var amountsHidden
-    @FocusState private var noteFocused: Bool
+    @FocusState private var focusedField: TransferField?
 
     public init(state: TransferFormState) {
         _state = Bindable(state)
@@ -39,72 +46,115 @@ public struct TransferFormView: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.bottom, noteFocused ? 20 : 280)
-        }
-        .safeAreaInset(edge: .bottom) {
-            if !noteFocused {
-                AmountKeypad { state.press($0) }
-            }
+            .padding(.top, 8)
+            .padding(.bottom, 24)
         }
         .scrollDismissesKeyboard(.interactively)
+        .task {
+            focusedField = .amount
+        }
         .onChange(of: state.fromID) { _, _ in
             if state.toID == state.fromID {
                 state.toID = state.availableTargets.first?.id
             }
         }
         .onChange(of: state.requiresConvertedAmount) { _, needsAmount in
-            if !needsAmount, state.activeField == .received {
-                state.activeField = .amount
+            if !needsAmount, focusedField == .received {
+                focusedField = .amount
             }
         }
     }
 
     private var amountDisplay: some View {
         HStack(alignment: .top, spacing: 12) {
-            Button {
-                noteFocused = false
-                state.activeField = .amount
-            } label: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(state.fromAccount?.currency.code ?? CurrencyCatalog.defaultCurrency.code)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(state.fromAccount?.currency.code ?? CurrencyCatalog.defaultCurrency.code)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
 
-                    Text(state.amountText.isEmpty ? "0" : state.amountText)
-                        .font(.system(size: 52, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .minimumScaleFactor(0.5)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(.rect)
+                TextField("0", text: amountBinding)
+                    .font(.system(size: 52, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+                    .decimalKeyboard()
+                    .focused($focusedField, equals: .amount)
+                    .accessibilityLabel("Amount")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Amount, \(state.amountText.isEmpty ? "0" : state.amountText)")
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .trailing, spacing: 8) {
-                AmountFieldChip(
-                    title: "Fee",
-                    value: state.feeText,
-                    isActive: state.activeField == .fee
-                ) {
-                    noteFocused = false
-                    state.activeField = .fee
-                }
+                compactField("Fee", text: feeBinding, field: .fee)
 
                 if state.requiresConvertedAmount {
-                    AmountFieldChip(
-                        title: "Received",
-                        value: state.receivedText,
-                        currencyCode: state.toAccount?.currency.code,
-                        isActive: state.activeField == .received
-                    ) {
-                        noteFocused = false
-                        state.activeField = .received
-                    }
+                    compactField("Received", text: receivedBinding, field: .received)
                 }
             }
         }
+    }
+
+    private func compactField(
+        _ title: String,
+        text: Binding<String>,
+        field: TransferField
+    ) -> some View {
+        HStack(spacing: 4) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            TextField("0", text: text)
+                .font(.caption.weight(.semibold))
+                .monospacedDigit()
+                .multilineTextAlignment(.trailing)
+                .frame(width: 64, height: 22, alignment: .trailing)
+                .padding(.trailing, 2)
+                .decimalKeyboard()
+                .focused($focusedField, equals: field)
+                .accessibilityLabel(title)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.quaternary.opacity(0.35), in: .capsule)
+    }
+
+    private var amountBinding: Binding<String> {
+        Binding(
+            get: { state.amountText },
+            set: {
+                state.amountText = AmountEntry.sanitisedText(
+                    $0,
+                    exponent: state.fromAccount?.currency.exponent
+                        ?? CurrencyCatalog.defaultCurrency.exponent
+                )
+            }
+        )
+    }
+
+    private var feeBinding: Binding<String> {
+        Binding(
+            get: { state.feeText },
+            set: {
+                state.feeText = AmountEntry.sanitisedText(
+                    $0,
+                    exponent: state.fromAccount?.currency.exponent
+                        ?? CurrencyCatalog.defaultCurrency.exponent
+                )
+            }
+        )
+    }
+
+    private var receivedBinding: Binding<String> {
+        Binding(
+            get: { state.receivedText },
+            set: {
+                state.receivedText = AmountEntry.sanitisedText(
+                    $0,
+                    exponent: state.toAccount?.currency.exponent
+                        ?? CurrencyCatalog.defaultCurrency.exponent
+                )
+            }
+        )
     }
 
     private func accountPicker(
@@ -144,7 +194,7 @@ public struct TransferFormView: View {
 
                 TextField("Note", text: $state.note, axis: .vertical)
                     .lineLimit(1...3)
-                    .focused($noteFocused)
+                    .focused($focusedField, equals: .note)
             }
             .padding(.top, 8)
         }

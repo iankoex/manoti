@@ -53,6 +53,8 @@ public struct TransactionFilter: Equatable, Sendable {
     /// Every type is on by default, so an untouched filter shows everything.
     public var accountKinds: Set<AccountKind> = Set(AccountKind.allCases)
     public var accountIDs: Set<UUID> = []
+    /// Any of these tags on any line matches. Empty means no tag filter.
+    public var tagIDs: Set<UUID> = []
     public var minimumAmountText = ""
     public var maximumAmountText = ""
     public var datePreset: TransactionDatePreset = .any
@@ -69,6 +71,7 @@ public struct TransactionFilter: Equatable, Sendable {
     public var isActive: Bool {
         accountKinds != Set(AccountKind.allCases)
             || !accountIDs.isEmpty
+            || !tagIDs.isEmpty
             || !minimumAmountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !maximumAmountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || datePreset != .any
@@ -116,6 +119,14 @@ public enum TransactionFilterEngine {
                 }
             }
 
+            if !filter.tagIDs.isEmpty {
+                let entryTagIDs = Set(entry.tagList.map(\.id))
+
+                guard !entryTagIDs.isDisjoint(with: filter.tagIDs) else {
+                    return false
+                }
+            }
+
             if let bounds {
                 let money = Money(minorUnits: entry.amountMinor, currency: entry.currency)
                 // Missing rates fall back to 1:1, the same convention the summaries use.
@@ -129,12 +140,16 @@ public enum TransactionFilterEngine {
             }
 
             if !search.isEmpty {
-                let fields = [
+                var fields = [
                     entry.payee,
                     entry.note,
-                    entry.category?.name ?? "",
                     entry.account?.displayName ?? "",
                 ]
+
+                for line in entry.orderedLines {
+                    fields.append(line.category?.name ?? "")
+                    fields.append(contentsOf: line.tagList.map(\.name))
+                }
 
                 guard fields.contains(where: { $0.localizedStandardContains(search) }) else {
                     return false

@@ -13,7 +13,7 @@ import Foundation
 /// Dates use ISO-8601 with fractional seconds; `Decimal` values are strings so no binary
 /// floating-point conversion ever happens.
 nonisolated public struct BackupDocument: Codable, Sendable {
-    public static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 2
 
     public var schemaVersion: Int
     /// SHA-256 of the document encoded with this field empty. Optional so backups written
@@ -45,6 +45,9 @@ nonisolated public struct BackupDocument: Codable, Sendable {
     public var sinkingFundContributions: [BackupSinkingFundContribution]
     public var goals: [BackupGoal]
     public var budgetAlerts: [BackupBudgetAlert]
+    /// Optional so version 1 files still decode.
+    public var tags: [BackupTag]?
+    public var lines: [BackupLedgerEntryLine]?
 
     public init(
         schemaVersion: Int,
@@ -73,6 +76,8 @@ nonisolated public struct BackupDocument: Codable, Sendable {
         sinkingFundContributions: [BackupSinkingFundContribution],
         goals: [BackupGoal],
         budgetAlerts: [BackupBudgetAlert],
+        tags: [BackupTag]? = nil,
+        lines: [BackupLedgerEntryLine]? = nil,
         checksum: String? = nil
     ) {
         self.schemaVersion = schemaVersion
@@ -102,6 +107,8 @@ nonisolated public struct BackupDocument: Codable, Sendable {
         self.sinkingFundContributions = sinkingFundContributions
         self.goals = goals
         self.budgetAlerts = budgetAlerts
+        self.tags = tags
+        self.lines = lines
     }
 }
 
@@ -381,6 +388,8 @@ nonisolated public struct BackupAccount: Codable, Sendable {
     public var sortIndex: Int
     public var createdAt: Date
     public var updatedAt: Date
+    /// Absent in version 1 files; restore defaults to personal.
+    public var ownershipRaw: String?
 
     public init(
         id: UUID,
@@ -394,7 +403,8 @@ nonisolated public struct BackupAccount: Codable, Sendable {
         isArchived: Bool,
         sortIndex: Int,
         createdAt: Date,
-        updatedAt: Date
+        updatedAt: Date,
+        ownershipRaw: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -408,6 +418,7 @@ nonisolated public struct BackupAccount: Codable, Sendable {
         self.sortIndex = sortIndex
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.ownershipRaw = ownershipRaw
     }
 }
 
@@ -437,6 +448,8 @@ nonisolated public struct BackupMerchantMemory: Codable, Sendable {
     public var createdAt: Date
     /// Optional so backups written before per-category counts still decode.
     public var categoryCountsJSON: String?
+    /// Optional so backups written before split templates still decode.
+    public var splitTemplateJSON: String?
 
     public init(
         id: UUID,
@@ -448,7 +461,8 @@ nonisolated public struct BackupMerchantMemory: Codable, Sendable {
         lastSeenAt: Date,
         autoApply: Bool,
         createdAt: Date,
-        categoryCountsJSON: String? = nil
+        categoryCountsJSON: String? = nil,
+        splitTemplateJSON: String? = nil
     ) {
         self.id = id
         self.merchantKey = merchantKey
@@ -460,6 +474,7 @@ nonisolated public struct BackupMerchantMemory: Codable, Sendable {
         self.autoApply = autoApply
         self.createdAt = createdAt
         self.categoryCountsJSON = categoryCountsJSON
+        self.splitTemplateJSON = splitTemplateJSON
     }
 }
 
@@ -553,6 +568,8 @@ nonisolated public struct BackupParseRule: Codable, Sendable {
     public var isEnabled: Bool
     public var sampleText: String
     public var ruleSetID: UUID?
+    /// Optional so backups written before message roles still decode.
+    public var roleRaw: String?
 
     public init(
         id: UUID,
@@ -563,7 +580,8 @@ nonisolated public struct BackupParseRule: Codable, Sendable {
         priority: Int,
         isEnabled: Bool,
         sampleText: String,
-        ruleSetID: UUID?
+        ruleSetID: UUID?,
+        roleRaw: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -574,6 +592,7 @@ nonisolated public struct BackupParseRule: Codable, Sendable {
         self.isEnabled = isEnabled
         self.sampleText = sampleText
         self.ruleSetID = ruleSetID
+        self.roleRaw = roleRaw
     }
 }
 
@@ -604,6 +623,13 @@ nonisolated public struct BackupLedgerEntry: Codable, Sendable {
     public var investmentCashFlowID: UUID?
     /// Optional so backups written before fingerprints still decode.
     public var ingestFingerprint: String?
+    public var ingestPayee: String?
+    public var channelName: String?
+    public var confirmationRef: String?
+    public var confirmationSender: String?
+    public var confirmedAt: Date?
+    public var confirmationText: String?
+    public var isConfirmationOnly: Bool?
 
     public init(
         id: UUID,
@@ -630,7 +656,14 @@ nonisolated public struct BackupLedgerEntry: Codable, Sendable {
         transferID: UUID?,
         loanID: UUID?,
         investmentCashFlowID: UUID?,
-        ingestFingerprint: String? = nil
+        ingestFingerprint: String? = nil,
+        ingestPayee: String? = nil,
+        channelName: String? = nil,
+        confirmationRef: String? = nil,
+        confirmationSender: String? = nil,
+        confirmedAt: Date? = nil,
+        confirmationText: String? = nil,
+        isConfirmationOnly: Bool? = nil
     ) {
         self.id = id
         self.occurredAt = occurredAt
@@ -657,6 +690,13 @@ nonisolated public struct BackupLedgerEntry: Codable, Sendable {
         self.loanID = loanID
         self.investmentCashFlowID = investmentCashFlowID
         self.ingestFingerprint = ingestFingerprint
+        self.ingestPayee = ingestPayee
+        self.channelName = channelName
+        self.confirmationRef = confirmationRef
+        self.confirmationSender = confirmationSender
+        self.confirmedAt = confirmedAt
+        self.confirmationText = confirmationText
+        self.isConfirmationOnly = isConfirmationOnly
     }
 }
 
@@ -1054,6 +1094,68 @@ nonisolated public struct BackupGoal: Codable, Sendable {
         self.isArchived = isArchived
         self.createdAt = createdAt
         self.accountID = accountID
+    }
+}
+
+nonisolated public struct BackupTag: Codable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var note: String
+    public var colorHex: String
+    public var symbolName: String
+    public var statusRaw: String
+    public var closedAt: Date?
+    public var createdAt: Date
+    public var updatedAt: Date
+
+    public init(
+        id: UUID,
+        name: String,
+        note: String,
+        colorHex: String,
+        symbolName: String,
+        statusRaw: String,
+        closedAt: Date?,
+        createdAt: Date,
+        updatedAt: Date
+    ) {
+        self.id = id
+        self.name = name
+        self.note = note
+        self.colorHex = colorHex
+        self.symbolName = symbolName
+        self.statusRaw = statusRaw
+        self.closedAt = closedAt
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+nonisolated public struct BackupLedgerEntryLine: Codable, Sendable {
+    public var id: UUID
+    public var entryID: UUID
+    public var amountMinor: Int64
+    public var sortIndex: Int
+    public var createdAt: Date
+    public var categoryID: UUID?
+    public var tagIDs: [UUID]
+
+    public init(
+        id: UUID,
+        entryID: UUID,
+        amountMinor: Int64,
+        sortIndex: Int,
+        createdAt: Date,
+        categoryID: UUID?,
+        tagIDs: [UUID]
+    ) {
+        self.id = id
+        self.entryID = entryID
+        self.amountMinor = amountMinor
+        self.sortIndex = sortIndex
+        self.createdAt = createdAt
+        self.categoryID = categoryID
+        self.tagIDs = tagIDs
     }
 }
 
